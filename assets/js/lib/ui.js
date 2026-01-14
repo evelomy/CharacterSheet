@@ -623,7 +623,41 @@ $("#ruleset").addEventListener("change", async () => {
           return;
         }
 
-        const choices = Array.isArray(node?.choices) ? node.choices : [];
+        // ---- HP progression (class hit die + CON mod) ----
+        // Determine hit die: prefer ruleset class.hitDie, otherwise guess Artificer = d8
+        const cls = (this.engine.getClass ? this.engine.getClass(rs, c.classId) : (rs?.raw?.classes?.[c.classId] || null));
+        const hitDie = Number(cls?.hitDie || (String(c.classId).toLowerCase().includes("artificer") ? 8 : 8));
+        const conMod = this.engine.abilityMod ? this.engine.abilityMod(c.abilities.con) : (this.engine.derived(c).mods.con);
+
+        // Only apply HP for levels we are actually processing (and only once per level)
+        c.advancement ||= {};
+        c.advancement[String(level)] ||= {};
+        const advLevel = c.advancement[String(level)];
+
+        if (!advLevel.hpGain) {
+          if (level === 1) {
+            // Starting HP: hit die + CON mod (min 1)
+            const startHp = Math.max(1, hitDie + conMod);
+            // Only auto-set if character still looks "default-ish"
+            if ((c.hp?.max ?? 0) <= 10 && (c.hp?.current ?? 0) <= 10) {
+              c.hp.max = startHp;
+              c.hp.current = startHp;
+              advLevel.hpGain = startHp; // store as "starting"
+            }
+          } else {
+            // Level-up HP: default to average + CON mod, min 1
+            const avg = Math.floor(hitDie / 2) + 1; // e.g. d8 => 5
+            const defGain = Math.max(1, avg + conMod);
+            const ans = prompt(`HP gain for level ${level}?\\nHit Die d${hitDie}, CON mod ${conMod >= 0 ? "+"+conMod : conMod}.\\nDefault: ${defGain}`, String(defGain));
+            if (ans === null) { alert("Level-up cancelled."); return; }
+            const gain = Math.max(1, clampInt(ans, 1, 999));
+            c.hp.max = clampInt((c.hp.max ?? 0) + gain, 1, 9999);
+            c.hp.current = clampInt((c.hp.current ?? 0) + gain, 0, c.hp.max);
+            advLevel.hpGain = gain;
+          }
+        }
+
+const choices = Array.isArray(node?.choices) ? node.choices : [];
         const selections = {};
 
         for (const ch of choices) {
