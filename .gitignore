@@ -1,0 +1,4 @@
+# If you ever add tooling later
+node_modules/
+dist/
+.DS_Store
