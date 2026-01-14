@@ -392,6 +392,13 @@ async function deleteCharacter(ch){
 }
 
 async function Sheet(){
+  const rs=(state?.activeRuleset||state?.ruleset||{});
+  const c=(state?.activeCharacter||state?.character||{});
+  c.level ??= 1;
+  c.classId ??= (rs.classes ? Object.keys(rs.classes)[0] : null);
+  c.abilities ??= {str:10,dex:10,con:10,int:10,wis:10,cha:10};
+  c.custom ??= {};
+  c.choices ??= {};
   const rs = state.ruleset;
   const ch = state.character;
   if(!rs || !ch){
