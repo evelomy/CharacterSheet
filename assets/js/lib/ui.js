@@ -270,8 +270,8 @@ export class UI{
               <div class="k">HP</div>
               <div class="v">
                 <div>
-                  <div style="font-weight:900;font-size:22px">${esc(String(c.hp.current))} <span class="muted" style="font-size:14px">/ ${esc(String(c.hp.max))}</span></div>
-                  <div class="small muted">Temp HP: ${esc(String(c.tempHp||0))}</div>
+                  <div style="font-weight:900;font-size:22px"><span id="hpSumCur">${esc(String(c.hp.current))}</span> <span class="muted" style="font-size:14px">/ <span id="hpSumMax">${esc(String(c.hp.max))}</span></span></div>
+                  <div class="small muted">Temp HP: <span id="hpSumTemp">${esc(String(c.tempHp||0))}</span></div>
                 </div>
                 <div class="row" style="justify-content:flex-end">
                   <button id="btnHeal" class="btn good" type="button">+ Heal</button>
@@ -368,6 +368,16 @@ export class UI{
     `);
 
     const $ = (sel) => this.app.querySelector(sel);
+
+    const syncHpSummary = () => {
+      const cur = $("#hpCurrent")?.value ?? String(c.hp.current);
+      const max = $("#hpMax")?.value ?? String(c.hp.max);
+      const temp = $("#tempHp")?.value ?? String(c.tempHp || 0);
+      const a = $("#hpSumCur"); if (a) a.textContent = String(cur);
+      const b = $("#hpSumMax"); if (b) b.textContent = String(max);
+      const t = $("#hpSumTemp"); if (t) t.textContent = String(temp);
+    };
+
 
     $("#btnBack").addEventListener("click", ()=> location.hash = "#/");
 
@@ -499,7 +509,7 @@ $("#ruleset").addEventListener("change", async () => {
       c.rulesetId = $("#ruleset").value || "";
       c.classId = "";
       await this._autosave(c, id, true);
-      location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
+      syncHpSummary();
     });
 
     $("#classId").addEventListener("change", async () => {
@@ -539,7 +549,7 @@ $("#ruleset").addEventListener("change", async () => {
       if (tempEl)  tempEl.value  = String(c.tempHp || 0);
 
       await this._autosave(c, id, true);
-      location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
+      syncHpSummary();
     });
 
     $("#btnDmg").addEventListener("click", async () => {
@@ -560,7 +570,7 @@ $("#ruleset").addEventListener("change", async () => {
       if (tempEl)  tempEl.value  = String(c.tempHp || 0);
 
       await this._autosave(c, id, true);
-      location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
+      syncHpSummary();
     });
 
     $("#btnTempClear").addEventListener("click", async () => {
