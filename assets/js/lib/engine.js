@@ -1,66 +1,92 @@
-export function profBonus(level){
-  if(level>=17) return 6;
-  if(level>=13) return 5;
-  if(level>=9) return 4;
-  if(level>=5) return 3;
-  return 2;
-}
-export function abilityMod(score){ return Math.floor((score-10)/2); }
+// Ruleset + level-up logic.
+// This is intentionally flexible: we accept "good enough" rulesets and don’t hard-crash on missing fields.
 
-export function scalarAt(map, level, def=0){
-  if(!map) return def;
-  const keys = Object.keys(map).map(k=>parseInt(k,10)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
-  let v=def;
-  for(const k of keys){ if(level>=k) v=map[String(k)]; }
-  return v;
-}
-
-export function filterOptions(pool, filter={}, ctx={}){
-  let out = pool.slice();
-  if(filter.minLevel!=null){
-    out = out.filter(it=>{
-      const ml = it?.requires?.minLevel ?? it?.minLevel ?? 0;
-      return (ctx.level ?? 1) >= (ml || 0);
-    });
+export class Engine {
+  constructor({ db }) {
+    this.db = db;
   }
-  if(filter.class){
-    out = out.filter(it=>{
-      const lists = it.lists || (it.class ? [it.class] : []);
-      return Array.isArray(lists) && lists.includes(filter.class);
-    });
-  }
-  return out;
-}
 
-export function poolByKey(rs, key){
-  if(!rs) return [];
-  if(key==="infusions") return rs.infusions || [];
-  if(key==="feats") return rs.feats || [];
-  if(key.startsWith("spells.")){
-    const lvl = key.split(".")[1];
-    const spells = rs.spells || [];
-    if(lvl==="cantrip") return spells.filter(s=>s.level===0);
-    const n=parseInt(lvl,10);
-    return spells.filter(s=>s.level===n);
-  }
-  return [];
-}
+  async importRulesetFromJsonText(text) {
+    let obj;
+    try {
+      obj = JSON.parse(text);
+    } catch (e) {
+      throw new Error("Ruleset JSON is invalid JSON.");
+    }
 
-export function buildLevelUpPlan(rs, ch, nextLevel){
-  const cls = rs?.classes?.[ch.classId];
-  const entry = cls?.progression?.[String(nextLevel)] || {};
-  return { nextLevel, grants: entry.grants||[], choices: entry.choices||[], notes: entry.notes||null };
-}
+    // Normalize minimal fields
+    const id = obj.id || crypto.randomUUID();
+    const ruleset = {
+      id,
+      name: obj.name || "Unnamed Ruleset",
+      version: obj.version || "1.0",
+      pools: obj.pools || {}, // optional: { spells: [...], feats:[...], ... }
+      progression: obj.progression || {}, // optional: { "1": { choices: [...] }, "2": ... }
+      raw: obj, // keep original for future richness
+      importedAt: new Date().toISOString(),
+    };
 
-export function applyLevelUp(ch, plan, choiceResults){
-  const out = structuredClone(ch);
-  out.level = plan.nextLevel;
-  out.features = out.features || [];
-  for(const f of (plan.grants||[])) if(!out.features.includes(f)) out.features.push(f);
-  out.choices = out.choices || {};
-  for(const choice of (plan.choices||[])){
-    out.choices[choice.id] = (choiceResults?.[choice.id] || []);
+    await this.db.putRuleset(ruleset);
+    return ruleset;
   }
-  out.updatedAt = Date.now();
-  return out;
+
+  // Return choices for a given level based on a ruleset.
+  // Expected shape (recommended):
+  // progression: {
+  //   "2": { choices: [
+  //      { key:"feat", label:"Choose a feat", type:"pickOne", pool:"feats" }
+  //   ]}
+  // }
+  getLevelChoices(ruleset, level) {
+    const prog = ruleset?.progression || ruleset?.raw?.progression || {};
+    const block = prog[String(level)] || prog[level] || null;
+    const choices = Array.isArray(block?.choices) ? block.choices : [];
+    return choices;
+  }
+
+  resolvePool(ruleset, poolName) {
+    const pools = ruleset?.pools || ruleset?.raw?.pools || {};
+    const pool = pools[poolName];
+    return Array.isArray(pool) ? pool : [];
+  }
+
+  validateCharacter(char) {
+    // basic normalization so UI doesn’t explode
+    const c = structuredClone(char || {});
+    c.id ||= crypto.randomUUID();
+    c.name ||= "Unnamed Character";
+    c.rulesetId ||= null;
+    c.level ||= 1;
+
+    c.hp ||= { current: 10, max: 10 };
+    c.tempHp ||= 0;
+
+    c.abilities ||= { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 };
+    c.ac ||= 10;
+    c.speed ||= 30;
+
+    c.inventory ||= [];
+    c.notes ||= "";
+    c.portrait ||= null; // { mime, blobId? } or { mime, dataUrl } - we store as dataUrl for simplicity
+
+    c.advancement ||= {}; // per-level selections: { "2": { feat:"Lucky" } }
+
+    c.createdAt ||= new Date().toISOString();
+    c.updatedAt ||= new Date().toISOString();
+    return c;
+  }
+
+  applyLevelUp(char, newLevel, selectionsByKey) {
+    const c = this.validateCharacter(char);
+    const lvl = Number(newLevel);
+    if (!Number.isFinite(lvl) || lvl < 1) throw new Error("Invalid level.");
+    c.level = lvl;
+
+    if (selectionsByKey && typeof selectionsByKey === "object") {
+      c.advancement[String(lvl)] = selectionsByKey;
+    }
+
+    c.updatedAt = new Date().toISOString();
+    return c;
+  }
 }
