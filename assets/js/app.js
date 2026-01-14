@@ -133,9 +133,17 @@ function makeNewCharacter({name, classId, level=1}){
   };
 }
 
-async function saveCharacter(normalizeCharacter(ch, {setActive=false}={})){
-  const rec = { id: ch.id, name: ch.name, data: ch, updatedAt: Date.now(), createdAt: ch.createdAt||Date.now(), rulesetId: state.rulesetId };
-  await idb.put("characters", normalizeCharacter());
+async function saveCharacter(ch, { setActive = false } = {}){
+  ch = normalizeCharacter(ch);
+  const rec = {
+    id: ch.id,
+    name: ch.name || "Character",
+    data: ch,
+    updatedAt: Date.now(),
+    createdAt: ch.createdAt || Date.now(),
+    rulesetId: state.rulesetId
+  };
+  await idb.put("characters", rec);
   if(setActive){
     await setActiveCharacter(ch.id);
     state.characterId = ch.id;
