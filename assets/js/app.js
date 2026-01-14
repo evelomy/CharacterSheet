@@ -112,7 +112,7 @@ async function init(){
     const rs = state.ruleset;
     const cls = listClasses(rs)[0];
     const ch = makeNewCharacter({name:"New Character", classId: cls?.id || "unknown", level:1});
-    await saveCharacter(normalizeCharacter(ch, {setActive:true}));
+    await saveCharacter(ch, {setActive:true});
     await refreshCharacters();
   }
 }
@@ -133,15 +133,43 @@ function makeNewCharacter({name, classId, level=1}){
   };
 }
 
-async function saveCharacter(normalizeCharacter(ch, {setActive=false}={})){
-  const rec = { id: ch.id, name: ch.name, data: ch, updatedAt: Date.now(), createdAt: ch.createdAt||Date.now(), rulesetId: state.rulesetId };
-  await idb.put("characters", normalizeCharacter());
+
+function normalizeCharacter(c){
+  c = c || {};
+  c.id ??= crypto.randomUUID?.() || ("ch_"+Math.random().toString(16).slice(2));
+  c.name ??= "Unnamed";
+  c.level = Math.max(1, parseInt(c.level ?? 1, 10) || 1);
+  c.classId ??= null;
+  c.subclassId ??= null;
+  c.abilities ??= {str:10,dex:10,con:10,int:10,wis:10,cha:10};
+  c.features ??= [];
+  c.choices ??= {};
+  c.custom ??= c.custom || {};
+  c.inventory ??= c.inventory || [];
+  c.notes ??= c.notes || "";
+  c.createdAt ??= Date.now();
+  c.updatedAt ??= Date.now();
+  return c;
+}
+
+async function saveCharacter(ch, {setActive=false}={}){
+  ch = normalizeCharacter(ch);
+  const rec = {
+    id: ch.id,
+    name: ch.name,
+    data: ch,
+    updatedAt: Date.now(),
+    createdAt: ch.createdAt || Date.now(),
+    rulesetId: state.rulesetId
+  };
+  await idb.put("characters", rec);
   if(setActive){
     await setActiveCharacter(ch.id);
     state.characterId = ch.id;
     state.character = ch;
   }
 }
+
 
 async function loadPortrait(characterId){
   const p = await idb.get("portraits", characterId);
@@ -269,7 +297,6 @@ function initialsNode(name){
 }
 
 function createCharacterModal(){
-  const normalizeCharacter=(c)=>{c=c||{};c.level??=1;c.classId??=null;c.abilities??={str:10,dex:10,con:10,int:10,wis:10,cha:10};c.custom??={};c.choices??={};c.inventory??=[];c.notes??="";return c;};
   const rs = state.ruleset;
   const classes = listClasses(rs);
   const body = el("div", {class:"grid cols2"}, [
@@ -286,7 +313,7 @@ function createCharacterModal(){
       const classId = qs("#ch_class", m.wrap).value;
       const level = parseInt(qs("#ch_level", m.wrap).value, 10) || 1;
       const ch = makeNewCharacter({name, classId, level});
-      await saveCharacter(normalizeCharacter(ch, {setActive:true}));
+      await saveCharacter(ch, {setActive:true});
       await refreshCharacters();
       toast("Character created", "Stored locally in your browser. Like a gremlin in a cupboard.");
       m.close();
@@ -311,7 +338,7 @@ function importCharacterModal(){
       if(!ch?.id) ch.id = crypto.randomUUID?.() || ("ch_"+Math.random().toString(16).slice(2));
       ch.updatedAt = Date.now();
       if(!ch.createdAt) ch.createdAt = Date.now();
-      await saveCharacter(normalizeCharacter(ch, {setActive:true}));
+      await saveCharacter(ch, {setActive:true});
       await refreshCharacters();
       toast("Imported", "Character added to this device.");
       m.close();
@@ -358,7 +385,7 @@ function editCharacterModal(ch){
       if(f){
         await setPortrait(ch.id, f);
       }
-      await saveCharacter(normalizeCharacter(ch, {setActive: state.characterId === ch.id}));
+      await saveCharacter(ch, {setActive: state.characterId === ch.id});
       await refreshCharacters();
       toast("Saved", "Character updated.");
       m.close();
@@ -455,7 +482,7 @@ async function Sheet(){
       const copy = structuredClone(state.character);
       copy.notes = e.target.value;
       copy.updatedAt = Date.now();
-      await saveCharacter(normalizeCharacter(copy, {setActive:true}));
+      await saveCharacter(copy, {setActive:true});
       await refreshCharacters();
     }})
   ]);
@@ -528,7 +555,7 @@ async function LevelUp(){
           }
         }
         const newCh = applyLevelUp(rs, structuredClone(ch), plan, choiceState);
-        await saveCharacter(normalizeCharacter(newCh, {setActive:true}));
+        await saveCharacter(newCh, {setActive:true});
         await refreshCharacters();
         toast("Level up applied", `Now level ${newCh.level}. Try not to die immediately.`);
         go("/sheet");
@@ -755,7 +782,7 @@ async function renameCharacter(){
       const copy = structuredClone(ch);
       copy.name = name;
       copy.updatedAt = Date.now();
-      await saveCharacter(normalizeCharacter(copy, {setActive:true}));
+      await saveCharacter(copy, {setActive:true});
       await refreshCharacters();
       toast("Renamed", name);
       m.close();
