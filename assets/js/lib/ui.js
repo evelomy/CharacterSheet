@@ -610,6 +610,17 @@ $("#ruleset").addEventListener("change", async () => {
       for(let lvl=currentLevel; lvl<targetLevel; lvl++){
         const next = lvl + 1;
         const node = this.engine.getProgression(rs, c.classId, next);
+        if (!node) {
+          // Loud failure: tell us exactly what the ruleset contains
+          const cls = this.engine.getClass ? this.engine.getClass(rs, c.classId) : (rs?.raw?.classes?.[c.classId] || null);
+          const keys = cls && cls.progression ? Object.keys(cls.progression).sort((a,b)=>Number(a)-Number(b)) : [];
+          alert(
+            `No progression found for class "${c.classId}" at level ${next}.\n` +
+            `Ruleset: ${rs.name || rs.id}\n` +
+            `Progression levels available: ${keys.length ? keys.join(", ") : "(none)"}`
+          );
+          return;
+        }
         const choices = Array.isArray(node?.choices) ? node.choices : [];
         const selections = {};
 
