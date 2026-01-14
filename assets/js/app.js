@@ -8,20 +8,6 @@ import { state, loadSettings, refreshRulesets, refreshCharacters, setActiveChara
 import { validateRuleset, listClasses } from "./lib/ruleset.js";
 import { deriveCharacter, buildLevelUpPlan, listOptionsForChoice, applyLevelUp } from "./lib/engine.js";
 
-// --- Crash overlay: prevent blank screen when something throws.
-function showFatal(err){
-  try{
-    const msg = (err && (err.stack || err.message)) ? (err.stack || err.message) : String(err);
-    const pre = document.createElement("pre");
-    pre.style.cssText = "position:fixed;inset:0;z-index:99999;background:#0b0f14;color:#e6edf3;padding:16px;overflow:auto;font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;";
-    pre.textContent = "CharSheet crashed.\n\n" + msg;
-    document.body.innerHTML = "";
-    document.body.appendChild(pre);
-  }catch(_){}
-}
-window.addEventListener("error", (e)=> showFatal(e?.error || e?.message || e));
-window.addEventListener("unhandledrejection", (e)=> showFatal(e?.reason || e));
-
 function navItem(path, icon, label){
   const a = el("a", {href:"#"+path, "data-nav":"1"}, [
     el("div", {html: icon}),
@@ -126,7 +112,7 @@ async function init(){
     const rs = state.ruleset;
     const cls = listClasses(rs)[0];
     const ch = makeNewCharacter({name:"New Character", classId: cls?.id || "unknown", level:1});
-    await saveCharacter(normalizeCharacter(ch, {setActive:true}));
+    await saveCharacter(ch, {setActive:true});
     await refreshCharacters();
   }
 }
@@ -139,10 +125,6 @@ function makeNewCharacter({name, classId, level=1}){
     subclassId: null,
     level,
     abilities: {str:10,dex:10,con:10,int:10,wis:10,cha:10},
-    hp: {current: 1, max: 1, temp: 0},
-    ac: 10,
-    speed: 30,
-    inventory: [],
     features: [],
     choices: {},
     notes: "",
@@ -151,9 +133,37 @@ function makeNewCharacter({name, classId, level=1}){
   };
 }
 
-async function saveCharacter(normalizeCharacter(ch, {setActive=false}={})){
+
+function normalizeCharacter(ch, rs=state.ruleset){
+  ch = ch || {};
+  ch.id ??= crypto.randomUUID?.() || ("ch_"+Math.random().toString(16).slice(2));
+  ch.name ??= "Unnamed";
+  ch.level = parseInt(ch.level ?? 1, 10) || 1;
+
+  // Default classId to first class in active ruleset if missing
+  if(!ch.classId){
+    const first = rs?.classes ? Object.keys(rs.classes)[0] : null;
+    ch.classId = first || "unknown";
+  }
+
+  ch.subclassId ??= null;
+  ch.abilities ??= {str:10,dex:10,con:10,int:10,wis:10,cha:10};
+  ch.features ??= [];
+  ch.choices ??= {};
+  ch.choicesByLevel ??= {};
+  ch.custom ??= {};
+  ch.inventory ??= [];
+  ch.notes ??= "";
+  ch.createdAt ??= Date.now();
+  ch.updatedAt ??= Date.now();
+  return ch;
+}
+
+
+async function saveCharacter(ch, {setActive=false}={}){
+  ch = normalizeCharacter(ch);
   const rec = { id: ch.id, name: ch.name, data: ch, updatedAt: Date.now(), createdAt: ch.createdAt||Date.now(), rulesetId: state.rulesetId };
-  await idb.put("characters", normalizeCharacter());
+  await idb.put("characters", rec);
   if(setActive){
     await setActiveCharacter(ch.id);
     state.characterId = ch.id;
@@ -287,7 +297,6 @@ function initialsNode(name){
 }
 
 function createCharacterModal(){
-  const normalizeCharacter=(c)=>{c=c||{};c.level??=1;c.classId??=null;c.abilities??={str:10,dex:10,con:10,int:10,wis:10,cha:10};c.hp??={current:1,max:1,temp:0};c.ac??=10;c.speed??=30;c.inventory??=[];c.custom??={};c.choices??={};c.inventory??=[];c.notes??="";return c;};
   const rs = state.ruleset;
   const classes = listClasses(rs);
   const body = el("div", {class:"grid cols2"}, [
@@ -295,27 +304,6 @@ function createCharacterModal(){
     field("Class", classSelect(classes, "ch_class")),
     field("Level", el("input", {class:"input", id:"ch_level", type:"number", min:"1", max:"20", value:"1"})),
     el("div", {class:"small"}, "Portrait can be added after creation.")
-
-    ,el("div", {class:"card", style:"grid-column:1/-1"}, [
-      el("div", {style:"font-weight:900; margin-bottom:10px"}, "Stats"),
-      el("div", {class:"grid cols3"}, [
-        field("HP Max", el("input", {class:"input", id:"ed_hpmax", type:"number", min:"1", value:String((ch.hp&&ch.hp.max)||1)})),
-        field("HP Current", el("input", {class:"input", id:"ed_hpcur", type:"number", min:"0", value:String((ch.hp&&ch.hp.current)||1)})),
-        field("Temp HP", el("input", {class:"input", id:"ed_hptemp", type:"number", min:"0", value:String((ch.hp&&ch.hp.temp)||0)})),
-        field("AC", el("input", {class:"input", id:"ed_ac", type:"number", min:"0", value:String(ch.ac ?? 10)})),
-        field("Speed", el("input", {class:"input", id:"ed_speed", type:"number", min:"0", value:String(ch.speed ?? 30)})),
-      ]),
-      el("div", {style:"margin-top:10px; font-weight:900"}, "Ability Scores"),
-      el("div", {class:"grid cols6", style:"margin-top:8px"}, [
-        field("STR", el("input", {class:"input", id:"ed_str", type:"number", min:"1", max:"30", value:String(ch.abilities?.str ?? 10)})),
-        field("DEX", el("input", {class:"input", id:"ed_dex", type:"number", min:"1", max:"30", value:String(ch.abilities?.dex ?? 10)})),
-        field("CON", el("input", {class:"input", id:"ed_con", type:"number", min:"1", max:"30", value:String(ch.abilities?.con ?? 10)})),
-        field("INT", el("input", {class:"input", id:"ed_int", type:"number", min:"1", max:"30", value:String(ch.abilities?.int ?? 10)})),
-        field("WIS", el("input", {class:"input", id:"ed_wis", type:"number", min:"1", max:"30", value:String(ch.abilities?.wis ?? 10)})),
-        field("CHA", el("input", {class:"input", id:"ed_cha", type:"number", min:"1", max:"30", value:String(ch.abilities?.cha ?? 10)})),
-      ])
-    ])
-
   ]);
 
   const footer = el("div", {class:"hstack"}, [
@@ -325,7 +313,7 @@ function createCharacterModal(){
       const classId = qs("#ch_class", m.wrap).value;
       const level = parseInt(qs("#ch_level", m.wrap).value, 10) || 1;
       const ch = makeNewCharacter({name, classId, level});
-      await saveCharacter(normalizeCharacter(ch, {setActive:true}));
+      await saveCharacter(ch, {setActive:true});
       await refreshCharacters();
       toast("Character created", "Stored locally in your browser. Like a gremlin in a cupboard.");
       m.close();
@@ -350,7 +338,7 @@ function importCharacterModal(){
       if(!ch?.id) ch.id = crypto.randomUUID?.() || ("ch_"+Math.random().toString(16).slice(2));
       ch.updatedAt = Date.now();
       if(!ch.createdAt) ch.createdAt = Date.now();
-      await saveCharacter(normalizeCharacter(ch, {setActive:true}));
+      await saveCharacter(ch, {setActive:true});
       await refreshCharacters();
       toast("Imported", "Character added to this device.");
       m.close();
@@ -392,26 +380,12 @@ function editCharacterModal(ch){
       ch.name = qs("#ed_name", m.wrap).value.trim() || ch.name || "Unnamed";
       ch.classId = qs("#ed_class", m.wrap).value;
       ch.level = parseInt(qs("#ed_level", m.wrap).value,10) || ch.level || 1;
-
-      ch.hp ??= {current:1,max:1,temp:0};
-      ch.hp.max = Math.max(1, parseInt(qs("#ed_hpmax", m.wrap).value||"1",10));
-      ch.hp.current = Math.max(0, parseInt(qs("#ed_hpcur", m.wrap).value||String(ch.hp.max),10));
-      ch.hp.temp = Math.max(0, parseInt(qs("#ed_hptemp", m.wrap).value||"0",10));
-      ch.ac = Math.max(0, parseInt(qs("#ed_ac", m.wrap).value||"10",10));
-      ch.speed = Math.max(0, parseInt(qs("#ed_speed", m.wrap).value||"30",10));
-      ch.abilities ??= {str:10,dex:10,con:10,int:10,wis:10,cha:10};
-      ch.abilities.str = parseInt(qs("#ed_str", m.wrap).value||"10",10);
-      ch.abilities.dex = parseInt(qs("#ed_dex", m.wrap).value||"10",10);
-      ch.abilities.con = parseInt(qs("#ed_con", m.wrap).value||"10",10);
-      ch.abilities.int = parseInt(qs("#ed_int", m.wrap).value||"10",10);
-      ch.abilities.wis = parseInt(qs("#ed_wis", m.wrap).value||"10",10);
-      ch.abilities.cha = parseInt(qs("#ed_cha", m.wrap).value||"10",10);
       ch.updatedAt = Date.now();
       const f = qs("#ed_portrait", m.wrap).files?.[0];
       if(f){
         await setPortrait(ch.id, f);
       }
-      await saveCharacter(normalizeCharacter(ch, {setActive: state.characterId === ch.id}));
+      await saveCharacter(ch, {setActive:state.characterId === ch.id});
       await refreshCharacters();
       toast("Saved", "Character updated.");
       m.close();
@@ -446,7 +420,7 @@ async function deleteCharacter(ch){
 
 async function Sheet(){
   const rs = state.ruleset;
-  const ch = state.character;
+  const ch = normalizeCharacter(state.character, rs);
   if(!rs || !ch){
     return shell(el("div", {class:"card"}, "No ruleset or character selected."));
   }
@@ -475,60 +449,6 @@ async function Sheet(){
     ])
   ]));
 
-
-  ch.hp ??= {current:1,max:1,temp:0};
-  ch.ac ??= 10;
-  ch.speed ??= 30;
-  ch.inventory ??= [];
-
-  const vitals = el("div", {class:"card"}, [
-    el("div", {style:"font-weight:900; margin-bottom:10px"}, "Vitals"),
-    (()=> {
-      const amt = el("input", {class:"input", type:"number", min:"0", value:"1", style:"width:90px"});
-      const save = async()=>{ await saveCharacter(normalizeCharacter(ch, {setActive:true})); await refreshCharacters(); go("/sheet"); };
-      const dmg = async()=>{ const n=parseInt(amt.value||"0",10)||0; const t=Math.min(ch.hp.temp||0, n); ch.hp.temp=(ch.hp.temp||0)-t; const rem=n-t; ch.hp.current=Math.max(0,(ch.hp.current||0)-rem); await save(); };
-      const heal = async()=>{ const n=parseInt(amt.value||"0",10)||0; ch.hp.current=Math.min(ch.hp.max||1,(ch.hp.current||0)+n); await save(); };
-      const clearTemp = async()=>{ ch.hp.temp=0; await save(); };
-      return el("div", {class:"vstack", style:"gap:10px"}, [
-        el("div", {class:"grid cols3"}, [
-          el("div", {}, [el("div", {class:"small"}, "HP"), el("div", {style:"font-size:22px;font-weight:900"}, `${ch.hp.current}/${ch.hp.max}`)]),
-          el("div", {}, [el("div", {class:"small"}, "Temp HP"), el("div", {style:"font-size:22px;font-weight:900"}, String(ch.hp.temp||0))]),
-          el("div", {}, [el("div", {class:"small"}, "AC / Speed"), el("div", {style:"font-size:22px;font-weight:900"}, `${ch.ac} / ${ch.speed}`)]),
-        ]),
-        el("div", {class:"hstack", style:"gap:8px; flex-wrap:wrap"}, [
-          el("div", {class:"small"}, "Amount"), amt,
-          el("button", {class:"btn danger", onclick:dmg}, ["- Damage"]),
-          el("button", {class:"btn", onclick:heal}, ["+ Heal"]),
-          el("button", {class:"btn", onclick:clearTemp}, ["Clear Temp"]),
-        ])
-      ]);
-    })()
-  ]);
-
-  const inventoryCard = el("div", {class:"card"}, [
-    el("div", {style:"font-weight:900; margin-bottom:10px"}, "Inventory"),
-    (()=> {
-      const nameIn = el("input", {class:"input", placeholder:"Item name"});
-      const qtyIn = el("input", {class:"input", type:"number", min:"1", value:"1", style:"width:90px"});
-      const noteIn = el("input", {class:"input", placeholder:"Notes (optional)"});
-      const save = async()=>{ await saveCharacter(normalizeCharacter(ch, {setActive:true})); await refreshCharacters(); go("/sheet"); };
-      const add = async()=>{ const name=(nameIn.value||"").trim(); if(!name) return; const qty=Math.max(1, parseInt(qtyIn.value||"1",10)); ch.inventory.push({id:(crypto.randomUUID?.()||("it_"+Math.random().toString(16).slice(2))), name, qty, note:(noteIn.value||"").trim()}); nameIn.value=""; noteIn.value=""; qtyIn.value="1"; await save(); };
-      const del = (id)=> async()=>{ ch.inventory=(ch.inventory||[]).filter(x=>x.id!==id); await save(); };
-      return el("div", {class:"vstack", style:"gap:10px"}, [
-        el("div", {class:"hstack", style:"gap:8px; flex-wrap:wrap"}, [
-          nameIn, qtyIn, noteIn,
-          el("button", {class:"btn primary", onclick:add}, ["Add"])
-        ]),
-        (ch.inventory||[]).length ? el("div", {class:"vstack", style:"gap:8px"}, (ch.inventory||[]).map(it=>
-          el("div", {class:"row", style:"justify-content:space-between"}, [
-            el("div", {}, [el("div", {style:"font-weight:800"}, `${it.name} ×${it.qty}`), it.note ? el("div", {class:"small"}, it.note) : null]),
-            el("button", {class:"btn small danger", onclick:del(it.id)}, ["Remove"])
-          ])
-        )) : el("div", {class:"small"}, "No items yet.")
-      ]);
-    })()
-  ]);
-
   const stats = el("div", {class:"card"}, [
     el("div", {style:"font-weight:900; margin-bottom:10px"}, "Abilities"),
     el("div", {class:"grid cols3"}, Object.entries(ch.abilities || {}).map(([k,v])=>{
@@ -556,7 +476,7 @@ async function Sheet(){
       const copy = structuredClone(state.character);
       copy.notes = e.target.value;
       copy.updatedAt = Date.now();
-      await saveCharacter(normalizeCharacter(copy, {setActive:true}));
+      await saveCharacter(copy, {setActive:true});
       await refreshCharacters();
     }})
   ]);
@@ -564,8 +484,7 @@ async function Sheet(){
   const cont = el("div", {}, []);
   cont.appendChild(pageTitle("Character Sheet", "Tabs come later; v1 shows the essentials cleanly.", []));
   cont.appendChild(header);
-  cont.appendChild(el("div", {class:"grid cols2"}, [vitals, stats]));
-  cont.appendChild(el("div", {class:"grid cols2"}, [inventoryCard, slots]));
+  cont.appendChild(el("div", {class:"grid cols2"}, [stats, slots]));
   cont.appendChild(notes);
 
   return shell(cont);
@@ -604,7 +523,7 @@ async function LevelUp(){
   const blocks = el("div", {class:"vstack"}, []);
 
   for(const choice of plan.choices){
-    const options = listOptionsForChoice(rs, ch, choice);
+    const options = listOptionsForChoice(rs, { ...ch, level: plan.nextLevel }, choice);
     const box = el("div", {class:"card"}, [
       el("div", {style:"font-weight:900"}, choice.title || choice.id),
       el("div", {class:"small", style:"margin-top:6px"}, choice.help || `Pick ${choice.count || 1} from ${choice.from}`),
@@ -630,7 +549,7 @@ async function LevelUp(){
           }
         }
         const newCh = applyLevelUp(rs, structuredClone(ch), plan, choiceState);
-        await saveCharacter(normalizeCharacter(newCh, {setActive:true}));
+        await saveCharacter(newCh, {setActive:true});
         await refreshCharacters();
         toast("Level up applied", `Now level ${newCh.level}. Try not to die immediately.`);
         go("/sheet");
@@ -857,7 +776,7 @@ async function renameCharacter(){
       const copy = structuredClone(ch);
       copy.name = name;
       copy.updatedAt = Date.now();
-      await saveCharacter(normalizeCharacter(copy, {setActive:true}));
+      await saveCharacter(copy, {setActive:true});
       await refreshCharacters();
       toast("Renamed", name);
       m.close();
@@ -918,4 +837,5 @@ setRouteCallback(async (path)=>{
   // refresh nav active state by full rerender (router already does)
 });
 
-(async()=>{ try{ await init(); start(); }catch(e){ showFatal(e); } })();
+await init();
+start();
