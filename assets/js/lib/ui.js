@@ -600,43 +600,47 @@ $("#ruleset").addEventListener("change", async () => {
       const targetLevel = clampInt($("#level").value, 1, 20);
       const currentLevel = clampInt(c.level, 1, 20);
 
-      if(targetLevel <= currentLevel){
-        c.level = targetLevel;
-        await this._autosave(c, id, true);
-        renderSaves(); renderSkills();
-        return;
+      // Build list of levels to process:
+      // - If target == current, still run "setup" for current level if not yet applied.
+      // - If target > current, run each next level, but skip any already applied.
+      const levels = [];
+      if (targetLevel === currentLevel) {
+        levels.push(currentLevel);
+      } else {
+        for (let L = currentLevel + 1; L <= targetLevel; L++) levels.push(L);
       }
 
-      for(let lvl=currentLevel; lvl<targetLevel; lvl++){
-        const next = lvl + 1;
-        const node = this.engine.getProgression(rs, c.classId, next);
+      // Ensure advancement structure exists
+      c.advancement ||= {};
+
+      for (const level of levels) {
+        // Skip if this level already has recorded advancement (prevents repeats)
+        if (c.advancement[String(level)] && Object.keys(c.advancement[String(level)]).length) continue;
+
+        const node = this.engine.getProgression(rs, c.classId, level);
         if (!node) {
-          // Loud failure: tell us exactly what the ruleset contains
-          const cls = this.engine.getClass ? this.engine.getClass(rs, c.classId) : (rs?.raw?.classes?.[c.classId] || null);
-          const keys = cls && cls.progression ? Object.keys(cls.progression).sort((a,b)=>Number(a)-Number(b)) : [];
-          alert(
-            `No progression found for class "${c.classId}" at level ${next}.\n` +
-            `Ruleset: ${rs.name || rs.id}\n` +
-            `Progression levels available: ${keys.length ? keys.join(", ") : "(none)"}`
-          );
+          alert(`No progression found for class "${c.classId}" at level ${level}.`);
           return;
         }
+
         const choices = Array.isArray(node?.choices) ? node.choices : [];
         const selections = {};
 
-        for(const ch of choices){
-          const opts = this.engine.getChoiceOptions(rs, c.classId, ch, next);
-          const picked = await this._choiceWizard(ch, opts, next);
-          if(picked == null) { alert("Level-up cancelled."); return; }
+        for (const ch of choices) {
+          const opts = this.engine.getChoiceOptions(rs, c.classId, ch, level);
+          const picked = await this._choiceWizard(ch, opts, level);
+          if (picked == null) { alert("Level-up cancelled."); return; }
           selections[ch.id] = picked;
         }
 
-        const updated = this.engine.applyProgressionNodeToCharacter(c, rs, c.classId, next, selections);
+        const updated = this.engine.applyProgressionNodeToCharacter(c, rs, c.classId, level, selections);
         Object.assign(c, updated);
         await this._autosave(c, id, true);
       }
 
-      c.level = targetLevel;
+      // After processing, set the character's actual level to target (if higher)
+      if (targetLevel > c.level) c.level = targetLevel;
+
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
