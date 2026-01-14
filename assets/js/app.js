@@ -276,18 +276,11 @@ function createCharacterModal(){
     field("Name", el("input", {class:"input", id:"ch_name", value:"New Character"})),
     field("Class", classSelect(classes, "ch_class")),
     field("Level", el("input", {class:"input", id:"ch_level", type:"number", min:"1", max:"20", value:"1"})),
-    field("HP Max", el("input", {class:"input", id:"ed_hpmax", type:"number", min:"1", value:String((ch.hp&&ch.hp.max)||1)})),
-    field("HP Current", el("input", {class:"input", id:"ed_hpcur", type:"number", min:"0", value:String((ch.hp&&ch.hp.current)||1)})),
-    field("Temp HP", el("input", {class:"input", id:"ed_hptemp", type:"number", min:"0", value:String((ch.hp&&ch.hp.temp)||0)})),
-    field("AC", el("input", {class:"input", id:"ed_ac", type:"number", min:"0", value:String(ch.ac ?? 10)})),
-    field("Speed", el("input", {class:"input", id:"ed_speed", type:"number", min:"0", value:String(ch.speed ?? 30)})),
-    el("div", {class:"small", style:"grid-column:1/-1"}, "Ability Scores"),
-    field("STR", el("input", {class:"input", id:"ed_str", type:"number", min:"1", max:"30", value:String(ch.abilities?.str ?? 10)})),
-    field("DEX", el("input", {class:"input", id:"ed_dex", type:"number", min:"1", max:"30", value:String(ch.abilities?.dex ?? 10)})),
-    field("CON", el("input", {class:"input", id:"ed_con", type:"number", min:"1", max:"30", value:String(ch.abilities?.con ?? 10)})),
-    field("INT", el("input", {class:"input", id:"ed_int", type:"number", min:"1", max:"30", value:String(ch.abilities?.int ?? 10)})),
-    field("WIS", el("input", {class:"input", id:"ed_wis", type:"number", min:"1", max:"30", value:String(ch.abilities?.wis ?? 10)})),
-    field("CHA", el("input", {class:"input", id:"ed_cha", type:"number", min:"1", max:"30", value:String(ch.abilities?.cha ?? 10)})),
+    field("HP Max", el("input", {class:"input", id:"ch_hpmax", type:"number", min:"1", value:"1"})),
+    field("HP Current", el("input", {class:"input", id:"ch_hpcur", type:"number", min:"0", value:"1"})),
+    field("Temp HP", el("input", {class:"input", id:"ch_hptemp", type:"number", min:"0", value:"0"})),
+    field("AC", el("input", {class:"input", id:"ch_ac", type:"number", min:"0", value:"10"})),
+    field("Speed", el("input", {class:"input", id:"ch_speed", type:"number", min:"0", value:"30"})),
     el("div", {class:"small"}, "Portrait can be added after creation.")
   ]);
 
@@ -298,6 +291,9 @@ function createCharacterModal(){
       const classId = qs("#ch_class", m.wrap).value;
       const level = parseInt(qs("#ch_level", m.wrap).value, 10) || 1;
       const ch = makeNewCharacter({name, classId, level});
+      ch.hp = {max: Math.max(1, parseInt(qs("#ch_hpmax", m.wrap).value||"1",10)), current: Math.max(0, parseInt(qs("#ch_hpcur", m.wrap).value||"1",10)), temp: Math.max(0, parseInt(qs("#ch_hptemp", m.wrap).value||"0",10))};
+      ch.ac = Math.max(0, parseInt(qs("#ch_ac", m.wrap).value||"10",10));
+      ch.speed = Math.max(0, parseInt(qs("#ch_speed", m.wrap).value||"30",10));
       await saveCharacter(normalizeCharacter(ch, {setActive:true}));
       await refreshCharacters();
       toast("Character created", "Stored locally in your browser. Like a gremlin in a cupboard.");
@@ -355,6 +351,18 @@ function editCharacterModal(ch){
     field("Name", el("input", {class:"input", id:"ed_name", value: ch.name || ""})),
     field("Class", classSelect(classes, "ed_class", ch.classId)),
     field("Level", el("input", {class:"input", id:"ed_level", type:"number", min:"1", max:"20", value:String(ch.level||1)})),
+    field("HP Max", el("input", {class:"input", id:"ed_hpmax", type:"number", min:"1", value:String((ch.hp&&ch.hp.max)||1)})),
+    field("HP Current", el("input", {class:"input", id:"ed_hpcur", type:"number", min:"0", value:String((ch.hp&&ch.hp.current)||1)})),
+    field("Temp HP", el("input", {class:"input", id:"ed_hptemp", type:"number", min:"0", value:String((ch.hp&&ch.hp.temp)||0)})),
+    field("AC", el("input", {class:"input", id:"ed_ac", type:"number", min:"0", value:String(ch.ac ?? 10)})),
+    field("Speed", el("input", {class:"input", id:"ed_speed", type:"number", min:"0", value:String(ch.speed ?? 30)})),
+    el("div", {class:"small", style:"grid-column:1/-1"}, "Ability Scores"),
+    field("STR", el("input", {class:"input", id:"ed_str", type:"number", min:"1", max:"30", value:String(ch.abilities?.str ?? 10)})),
+    field("DEX", el("input", {class:"input", id:"ed_dex", type:"number", min:"1", max:"30", value:String(ch.abilities?.dex ?? 10)})),
+    field("CON", el("input", {class:"input", id:"ed_con", type:"number", min:"1", max:"30", value:String(ch.abilities?.con ?? 10)})),
+    field("INT", el("input", {class:"input", id:"ed_int", type:"number", min:"1", max:"30", value:String(ch.abilities?.int ?? 10)})),
+    field("WIS", el("input", {class:"input", id:"ed_wis", type:"number", min:"1", max:"30", value:String(ch.abilities?.wis ?? 10)})),
+    field("CHA", el("input", {class:"input", id:"ed_cha", type:"number", min:"1", max:"30", value:String(ch.abilities?.cha ?? 10)})),
     field("Portrait", el("input", {class:"input", id:"ed_portrait", type:"file", accept:"image/*"})),
     el("div", {class:"small"}, "Portrait is stored as an image blob in IndexedDB. Not in your repo. Relax.")
   ]);
@@ -453,13 +461,16 @@ async function Sheet(){
       el("button", {class:"btn primary", html: icons.bolt, onclick: ()=>go("/levelup")}, ["Level Up"]),
     ])
   ]));
-  const vitals = (()=> {
-    ch.hp ??= {current:1,max:1,temp:0};
-    ch.ac ??= 10;
-    ch.speed ??= 30;
 
+  
+  // --- Vitals (HP/Temp/AC/Speed) ---
+  ch.hp ??= {current: 1, max: 1, temp: 0};
+  ch.ac ??= 10;
+  ch.speed ??= 30;
+
+  const vitals = (()=> {
     const amt = el("input", {class:"input", type:"number", min:"0", value:"1", style:"width:90px"});
-    const saveAndRerender = async ()=>{
+    const persist = async()=>{
       const copy = structuredClone(state.character);
       copy.hp = ch.hp;
       copy.ac = ch.ac;
@@ -470,23 +481,20 @@ async function Sheet(){
       state.character = copy;
       go("/sheet");
     };
-
-    const applyDamage = async ()=>{
+    const dmg = async()=>{
       const n = parseInt(amt.value||"0",10) || 0;
       const t = Math.min(ch.hp.temp||0, n);
       ch.hp.temp = (ch.hp.temp||0) - t;
       const rem = n - t;
       ch.hp.current = Math.max(0, (ch.hp.current||0) - rem);
-      await saveAndRerender();
+      await persist();
     };
-
-    const applyHeal = async ()=>{
+    const heal = async()=>{
       const n = parseInt(amt.value||"0",10) || 0;
       ch.hp.current = Math.min(ch.hp.max||1, (ch.hp.current||0) + n);
-      await saveAndRerender();
+      await persist();
     };
-
-    const setTemp = async (val)=>{ ch.hp.temp = Math.max(0, val); await saveAndRerender(); };
+    const clearTemp = async()=>{ ch.hp.temp = 0; await persist(); };
 
     return el("div", {class:"card"}, [
       el("div", {style:"font-weight:900; margin-bottom:10px"}, "Vitals"),
@@ -510,46 +518,20 @@ async function Sheet(){
       el("div", {class:"hstack", style:"gap:8px; flex-wrap:wrap; margin-top:10px"}, [
         el("div", {class:"small"}, "Amount"),
         amt,
-        el("button", {class:"btn danger", onclick: applyDamage}, ["- Damage"]),
-        el("button", {class:"btn", onclick: applyHeal}, ["+ Heal"]),
-        el("button", {class:"btn", onclick: ()=>setTemp(0)}, ["Clear Temp"]),
+        el("button", {class:"btn danger", onclick: dmg}, ["- Damage"]),
+        el("button", {class:"btn", onclick: heal}, ["+ Heal"]),
+        el("button", {class:"btn", onclick: clearTemp}, ["Clear Temp"]),
       ])
     ]);
   })();
 
-  const statblock = el("div", {class:"card"}, [
-    el("div", {style:"font-weight:900; margin-bottom:10px"}, "Stat Block"),
-    el("div", {class:"grid cols3"}, [
-      el("div", {class:"card soft tight"}, [
-        el("div", {class:"small"}, "Initiative"),
-        el("div", {style:"font-size:22px;font-weight:900;margin-top:4px"}, `${abilityMod(ch.abilities?.dex ?? 10) >= 0 ? "+" : ""}${abilityMod(ch.abilities?.dex ?? 10)}`),
-      ]),
-      el("div", {class:"card soft tight"}, [
-        el("div", {class:"small"}, "Proficiency Bonus"),
-        el("div", {style:"font-size:22px;font-weight:900;margin-top:4px"}, `+${derived.proficiencyBonus}`),
-      ]),
-      el("div", {class:"card soft tight"}, [
-        el("div", {class:"small"}, "Spell DC (INT)"),
-        el("div", {style:"font-size:22px;font-weight:900;margin-top:4px"}, String(8 + derived.proficiencyBonus + abilityMod(ch.abilities?.int ?? 10))),
-      ]),
-    ]),
-    el("div", {class:"small", style:"margin-top:10px"}, "Saves (base; proficiencies coming later)"),
-    el("div", {class:"grid cols3"}, Object.entries(ch.abilities||{}).map(([k,v])=>{
-      const mod = abilityMod(v);
-      return el("div", {class:"card soft tight"}, [
-        el("div", {class:"small"}, `${k.toUpperCase()} Save`),
-        el("div", {style:"font-size:18px;font-weight:900;margin-top:2px"}, `${mod>=0?"+":""}${mod}`),
-      ]);
-    }))
-  ]);
-
+  // --- Inventory ---
+  ch.inventory ??= [];
   const inventoryCard = (()=> {
-    ch.inventory ??= [];
     const nameIn = el("input", {class:"input", placeholder:"Item name"});
     const qtyIn = el("input", {class:"input", type:"number", min:"1", value:"1", style:"width:90px"});
     const noteIn = el("input", {class:"input", placeholder:"Notes (optional)"});
-
-    const saveInv = async ()=>{
+    const persist = async()=>{
       const copy = structuredClone(state.character);
       copy.inventory = ch.inventory;
       copy.updatedAt = Date.now();
@@ -558,20 +540,15 @@ async function Sheet(){
       state.character = copy;
       go("/sheet");
     };
-
-    const add = async ()=>{
+    const add = async()=>{
       const name = (nameIn.value||"").trim();
       if(!name) return;
-      const qty = Math.max(1, parseInt(qtyIn.value||"1",10)||1);
+      const qty = Math.max(1, parseInt(qtyIn.value||"1",10));
       ch.inventory.push({id: crypto.randomUUID?.()||("it_"+Math.random().toString(16).slice(2)), name, qty, note:(noteIn.value||"").trim()});
       nameIn.value=""; noteIn.value=""; qtyIn.value="1";
-      await saveInv();
+      await persist();
     };
-
-    const del = (id)=> async ()=>{
-      ch.inventory = (ch.inventory||[]).filter(x=>x.id!==id);
-      await saveInv();
-    };
+    const del = (id)=> async()=>{ ch.inventory = (ch.inventory||[]).filter(x=>x.id!==id); await persist(); };
 
     return el("div", {class:"card"}, [
       el("div", {style:"font-weight:900; margin-bottom:10px"}, "Inventory"),
@@ -580,19 +557,21 @@ async function Sheet(){
         el("button", {class:"btn primary", onclick:add}, ["Add"])
       ]),
       el("div", {style:"margin-top:10px"}, (ch.inventory||[]).length
-        ? (ch.inventory||[]).map(it=> el("div", {class:"row", style:"justify-content:space-between"}, [
-            el("div", {}, [
-              el("div", {style:"font-weight:800"}, `${it.name} ×${it.qty}`),
-              it.note ? el("div", {class:"small"}, it.note) : null
-            ]),
-            el("button", {class:"btn small danger", onclick:del(it.id)}, ["Remove"])
-          ]))
-        : el("div", {class:"small"}, "No items yet."))
+        ? (ch.inventory||[]).map(it=>
+            el("div", {class:"row", style:"justify-content:space-between"}, [
+              el("div", {}, [
+                el("div", {style:"font-weight:800"}, `${it.name} ×${it.qty}`),
+                it.note ? el("div", {class:"small"}, it.note) : null
+              ]),
+              el("button", {class:"btn small danger", onclick:del(it.id)}, ["Remove"])
+            ])
+          )
+        : el("div", {class:"small"}, "No items yet.")
+      )
     ]);
   })();
 
-
-  const stats = el("div", {class:"card"}, [
+const stats = el("div", {class:"card"}, [
     el("div", {style:"font-weight:900; margin-bottom:10px"}, "Abilities"),
     el("div", {class:"grid cols3"}, Object.entries(ch.abilities || {}).map(([k,v])=>{
       return el("div", {class:"card soft tight"}, [
@@ -627,9 +606,7 @@ async function Sheet(){
   const cont = el("div", {}, []);
   cont.appendChild(pageTitle("Character Sheet", "Tabs come later; v1 shows the essentials cleanly.", []));
   cont.appendChild(header);
-  cont.appendChild(el("div", {class:"grid cols2"}, [vitals, stats]));
-  cont.appendChild(el("div", {class:"grid cols2"}, [inventoryCard, slots]));
-  cont.appendChild(statblock);
+  cont.appendChild(el("div", {class:"grid cols2"}, [stats, slots]));
   cont.appendChild(notes);
 
   return shell(cont);
