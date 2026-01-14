@@ -200,11 +200,98 @@ export class Engine {
   applyProgressionNodeToCharacter(c, ruleset, classId, level, selectionsByChoiceId) {
     const out = this.validateCharacter(c);
     const node = this.getProgression(ruleset, classId, level);
+    out.advancement ||= {};
+    out.advancement[String(level)] ||= {};
+
     if (!node) {
+      // If there is no progression node, still update level and return.
       out.level = level;
-      out.updatedAt = new Date().show?.() ? new Date().toISOString() : new Date().toISOString();
+      out.updatedAt = new Date().toISOString();
       return out;
     }
+
+    const raw = ruleset?.raw || {};
+    const featuresDict = raw.features || {};
+
+    // ---- Apply grants (dedupe by name+level+tag) ----
+    const grants = Array.isArray(node.grants) ? node.grants : [];
+    out.features ||= [];
+    const hasFeature = (name, lvl, tag) =>
+      out.features.some(f => f && f.name === name && Number(f.level) === Number(lvl) && (f.tags||[]).includes(tag));
+
+    for (const gid of grants) {
+      const name = featuresDict?.[gid]?.name || gid;
+      if (!hasFeature(name, level, "grant")) {
+        out.features.push({
+          id: crypto.randomUUID(),
+          name,
+          level,
+          text: "",
+          tags: ["grant"]
+        });
+      }
+    }
+
+    // ---- Apply choices (skip ones already applied for this level) ----
+    const choices = Array.isArray(node.choices) ? node.choices : [];
+
+    const choiceSummaryLines = [];
+
+    for (const ch of choices) {
+      const choiceId = ch?.id;
+      if (!choiceId) continue;
+
+      // If already applied at this level, skip (prevents repeats)
+      if (Object.prototype.hasOwnProperty.call(out.advancement[String(level)], choiceId)) continue;
+
+      const picks = Array.isArray(selectionsByChoiceId?.[choiceId])
+        ? selectionsByChoiceId[choiceId]
+        : (selectionsByChoiceId?.[choiceId] ? [selectionsByChoiceId[choiceId]] : []);
+
+      // Record advancement even if empty (so it doesn't re-prompt)
+      out.advancement[String(level)][choiceId] = picks;
+
+      // Resolve names for nice display
+      const opts = this.getChoiceOptions(ruleset, classId, ch, level);
+      const nameMap = new Map(opts.map(o => [o.id, o.name || o.id]));
+      const nice = picks.map(id => nameMap.get(id) || id);
+
+      // Store into known spaces (dedupe)
+      out.spells ||= { cantrips: [], known: [] };
+      out.infusions ||= { learned: [], infused: [] };
+
+      if (choiceId.includes("cantrip") || choiceId.includes("cantrips") || ch?.from === "spells.cantrip") {
+        for (const id of picks) if (!out.spells.cantrips.includes(id)) out.spells.cantrips.push(id);
+      }
+
+      if (choiceId.includes("infusion") || choiceId.includes("infusions") || ch?.from === "infusions") {
+        for (const id of picks) if (!out.infusions.learned.includes(id)) out.infusions.learned.push(id);
+      }
+
+      // Human-readable summary line(s)
+      const title = ch?.title || choiceId;
+      if (nice.length) {
+        choiceSummaryLines.push(`${title}:\\n- ${nice.join("\\n- ")}`);
+      } else {
+        choiceSummaryLines.push(`${title}: (none)`);
+      }
+    }
+
+    // Add a single readable feature entry for the whole level's choices
+    if (choiceSummaryLines.length && !hasFeature(`Level ${level} choices`, level, "choice")) {
+      out.features.push({
+        id: crypto.randomUUID(),
+        name: `Level ${level} choices`,
+        level,
+        text: choiceSummaryLines.join("\\n\\n"),
+        tags: ["choice"]
+      });
+    }
+
+    out.level = level;
+    out.updatedAt = new Date().toISOString();
+    return out;
+  }
 
     // grants -> features list
     const raw = ruleset?.raw || {};
