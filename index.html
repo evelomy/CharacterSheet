@@ -4,25 +4,30 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CharacterSheet</title>
+  <meta name="theme-color" content="#0f1115" />
   <link rel="stylesheet" href="./assets/css/app.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <span class="logo">🧾</span>
-      <span>CharacterSheet</span>
+      <div class="logo">CS</div>
+      <div class="brandtext">
+        <div class="brandname">CharacterSheet</div>
+        <div class="brandsub">local-only • IndexedDB • no sync</div>
+      </div>
     </div>
-    <div class="topbar-right">
+    <div class="top-actions">
       <span id="buildBadge" class="badge">build: ?</span>
       <button id="btnHome" class="btn ghost" type="button">Home</button>
+      <button id="btnBackup" class="btn ghost" type="button">Backup</button>
     </div>
   </header>
 
   <main id="app" class="app">
     <noscript>
       <div class="card error">
-        <h2>No JavaScript</h2>
-        <p>This app is literally JavaScript. Turn it on.</p>
+        <h2>JavaScript is off</h2>
+        <p>This app is, unfortunately, made of JavaScript.</p>
       </div>
     </noscript>
   </main>
@@ -31,6 +36,6 @@
     <span id="statusLine">Ready.</span>
   </footer>
 
-  <script type="module" src="./assets/js/app.js"></script>
+  <script type="module" src="./assets/js/app.js?v=20260114-2212-45e67b6"></script>
 </body>
 </html>
