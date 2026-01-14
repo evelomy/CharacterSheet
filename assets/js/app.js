@@ -423,7 +423,7 @@ async function Sheet(){
 
   const stats = el("div", {class:"card"}, [
     el("div", {style:"font-weight:900; margin-bottom:10px"}, "Abilities"),
-    el("div", {class:"grid cols3"}, Object.entries(ch.abilities).map(([k,v])=>{
+    el("div", {class:"grid cols3"}, Object.entries(ch.abilities || {}).map(([k,v])=>{
       return el("div", {class:"card soft tight"}, [
         el("div", {class:"small"}, k.toUpperCase()),
         el("div", {style:"font-size:22px;font-weight:900;margin-top:4px"}, String(v)),
@@ -435,7 +435,7 @@ async function Sheet(){
   const slots = el("div", {class:"card"}, [
     el("div", {style:"font-weight:900; margin-bottom:10px"}, "Spell Slots (from ruleset table)"),
     Object.keys(derived.spellSlots||{}).length
-      ? el("div", {class:"grid cols4"}, Object.entries(derived.spellSlots).map(([lvl,c])=> el("div", {class:"card soft tight"}, [
+      ? el("div", {class:"grid cols4"}, Object.entries(derived.spellSlots || {}).map(([lvl,c])=> el("div", {class:"card soft tight"}, [
           el("div", {class:"small"}, `Level ${lvl}`),
           el("div", {style:"font-size:22px;font-weight:900;margin-top:4px"}, String(c))
         ])))
