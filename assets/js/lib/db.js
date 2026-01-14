@@ -3,18 +3,62 @@ const DB_VER=1;
 
 function openDB(){
   return new Promise((resolve, reject)=>{
+<<<<<<< HEAD
+    const req = indexedDB.open(DB_NAME, DB_VER);
+
+    req.onupgradeneeded = () => {
+      const db = req.result;
+=======
     const req=indexedDB.open(DB_NAME, DB_VER);
     req.onupgradeneeded=()=>{
       const db=req.result;
+>>>>>>> dec30cb5b367141c600c4945a14fb9ff2489175a
       if(!db.objectStoreNames.contains("rulesets")) db.createObjectStore("rulesets",{keyPath:"id"});
       if(!db.objectStoreNames.contains("characters")) db.createObjectStore("characters",{keyPath:"id"});
       if(!db.objectStoreNames.contains("settings")) db.createObjectStore("settings",{keyPath:"k"});
     };
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error);
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 
+<<<<<<< HEAD
+// Robust transaction runner:
+// - catches synchronous DataError (e.g., missing keyPath field on put)
+// - resolves/rejects based on the request if one is returned
+async function run(store, mode, fn){
+  const db = await openDB();
+  return new Promise((resolve, reject)=>{
+    let t;
+    try{
+      t = db.transaction(store, mode);
+    }catch(err){
+      reject(err);
+      return;
+    }
+
+    const s = t.objectStore(store);
+
+    let req;
+    try{
+      req = fn(s);
+    }catch(err){
+      try{ t.abort(); }catch(_){}
+      reject(err);
+      return;
+    }
+
+    if(req && typeof req === "object" && "onsuccess" in req && "onerror" in req){
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || t.error);
+    }else{
+      t.oncomplete = () => resolve(undefined);
+    }
+
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error("IndexedDB transaction aborted"));
+=======
 async function run(store, mode, fn){
   const db=await openDB();
   return new Promise((resolve,reject)=>{
@@ -23,31 +67,52 @@ async function run(store, mode, fn){
     const out=fn(s);
     t.oncomplete=()=>resolve(out);
     t.onerror=()=>reject(t.error);
+>>>>>>> dec30cb5b367141c600c4945a14fb9ff2489175a
   });
 }
 
 export async function getAll(store){
-  const db=await openDB();
+  const db = await openDB();
   return new Promise((resolve,reject)=>{
-    const t=db.transaction(store,"readonly");
-    const s=t.objectStore(store);
-    const req=s.getAll();
-    req.onsuccess=()=>resolve(req.result||[]);
-    req.onerror=()=>reject(req.error);
+    const t = db.transaction(store,"readonly");
+    const s = t.objectStore(store);
+    const req = s.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
   });
 }
+<<<<<<< HEAD
+
+export async function get(store,key){
+  const db = await openDB();
+=======
 export async function get(store,key){
   const db=await openDB();
+>>>>>>> dec30cb5b367141c600c4945a14fb9ff2489175a
   return new Promise((resolve,reject)=>{
-    const t=db.transaction(store,"readonly");
-    const s=t.objectStore(store);
-    const req=s.get(key);
-    req.onsuccess=()=>resolve(req.result);
-    req.onerror=()=>reject(req.error);
+    const t = db.transaction(store,"readonly");
+    const s = t.objectStore(store);
+    const req = s.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
   });
 }
 export async function put(store,obj){ return run(store,"readwrite", s=>s.put(obj)); }
 export async function del(store,key){ return run(store,"readwrite", s=>s.delete(key)); }
 
-export async function setSetting(k,v){ return put("settings",{k,v}); }
-export async function getSetting(k){ const x=await get("settings",k); return x?x.v:undefined; }
+export async function put(store,obj){
+  return run(store,"readwrite", s=>s.put(obj));
+}
+
+export async function del(store,key){
+  return run(store,"readwrite", s=>s.delete(key));
+}
+
+export async function setSetting(k,v){
+  return put("settings",{k,v});
+}
+
+export async function getSetting(k){
+  const x = await get("settings",k);
+  return x ? x.v : undefined;
+}
