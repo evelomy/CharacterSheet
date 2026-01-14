@@ -523,7 +523,7 @@ async function LevelUp(){
   const blocks = el("div", {class:"vstack"}, []);
 
   for(const choice of plan.choices){
-    const options = listOptionsForChoice(rs, ch, choice);
+    const options = listOptionsForChoice(rs, { ...ch, level: plan.nextLevel }, choice);
     const box = el("div", {class:"card"}, [
       el("div", {style:"font-weight:900"}, choice.title || choice.id),
       el("div", {class:"small", style:"margin-top:6px"}, choice.help || `Pick ${choice.count || 1} from ${choice.from}`),
