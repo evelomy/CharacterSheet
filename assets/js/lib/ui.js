@@ -512,6 +512,13 @@ $("#ruleset").addEventListener("change", async () => {
         const k = inp.getAttribute("data-abil");
         c.abilities[k] = clampInt(inp.value, 1, 30);
         await this._autosave(c, id, true);
+
+        // Update the ability modifier display under the input box
+        const ddNow = this.engine.derived(c);
+        const box = inp.closest(".stat");
+        const modEl = box ? box.querySelector(".mod") : null;
+        if (modEl) modEl.textContent = fmtMod(ddNow.mods[k]);
+
         renderSaves();
         renderSkills();
       });
