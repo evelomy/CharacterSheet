@@ -643,7 +643,13 @@ $("#ruleset").addEventListener("change", async () => {
               c.hp.max = startHp;
               c.hp.current = startHp;
               advLevel.hpGain = startHp; // store as "starting"
-            }
+            
+              // Sync form fields so _autosave() does not overwrite HP
+              const hpMaxEl = this.app.querySelector("#hpMax");
+              const hpCurEl = this.app.querySelector("#hpCurrent");
+              if (hpMaxEl) hpMaxEl.value = String(c.hp.max);
+              if (hpCurEl) hpCurEl.value = String(c.hp.current);
+}
           } else {
             // Level-up HP: default to average + CON mod, min 1
             const avg = Math.floor(hitDie / 2) + 1; // e.g. d8 => 5
@@ -654,7 +660,13 @@ $("#ruleset").addEventListener("change", async () => {
             c.hp.max = clampInt((c.hp.max ?? 0) + gain, 1, 9999);
             c.hp.current = clampInt((c.hp.current ?? 0) + gain, 0, c.hp.max);
             advLevel.hpGain = gain;
-          }
+          
+            // Sync form fields so _autosave() does not overwrite HP
+            const hpMaxEl = this.app.querySelector("#hpMax");
+            const hpCurEl = this.app.querySelector("#hpCurrent");
+            if (hpMaxEl) hpMaxEl.value = String(c.hp.max);
+            if (hpCurEl) hpCurEl.value = String(c.hp.current);
+}
         }
 
 const choices = Array.isArray(node?.choices) ? node.choices : [];
