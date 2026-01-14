@@ -494,9 +494,8 @@ export class UI{
       renderSkills();
     });
 
-    ["name","level","ac","speed","hpCurrent","hpMax","tempHp","notes"].forEach(hookAutosave);
-
-    $("#ruleset").addEventListener("change", async () => {
+    ["name","ac","speed","hpCurrent","hpMax","tempHp","notes"].forEach(hookAutosave);
+$("#ruleset").addEventListener("change", async () => {
       c.rulesetId = $("#ruleset").value || "";
       c.classId = "";
       await this._autosave(c, id, true);
@@ -638,9 +637,7 @@ export class UI{
   }
 
   _updateCharFromForm(c){
-    c.name = (this.app.querySelector("#name")?.value) || c.name;
-    c.level = clampInt(this.app.querySelector("#level")?.value, 1, 20);
-    c.ac = clampInt(this.app.querySelector("#ac")?.value, 0, 60);
+    c.name = (this.app.querySelector("#name")?.value) || c.name;    c.ac = clampInt(this.app.querySelector("#ac")?.value, 0, 60);
     c.speed = clampInt(this.app.querySelector("#speed")?.value, 0, 300);
     c.hp.current = clampInt(this.app.querySelector("#hpCurrent")?.value, 0, 9999);
     c.hp.max = clampInt(this.app.querySelector("#hpMax")?.value, 1, 9999);
