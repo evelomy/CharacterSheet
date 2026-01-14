@@ -7,6 +7,8 @@ export function el(tag, props={}, children=[]){
     if(k==="class") n.className=v;
     else if(k==="html") n.innerHTML=v;
     else if(k==="style") n.setAttribute("style", v);
+    else if(k==="value") n.value = v;
+    else if(k==="checked") n.checked = !!v;
     else if(k.startsWith("on") && typeof v==="function") n.addEventListener(k.slice(2), v);
     else if(v!==null && v!==undefined) n.setAttribute(k, v);
   }
@@ -16,13 +18,6 @@ export function el(tag, props={}, children=[]){
     else n.appendChild(c);
   }
   return n;
-}
-
-export function field(label, input){
-  return el("label", {class:"vstack", style:"gap:6px"}, [
-    el("div", {class:"small"}, label),
-    input
-  ]);
 }
 
 export function toast(msg){
@@ -38,7 +33,7 @@ export function modal(title, bodyNode, actions=[]){
     el("h3",{},[title]),
     el("button",{class:"btn ghost", onclick:()=>back.remove()},["Close"])
   ]);
-  const foot=el("div",{class:"hstack", style:"justify-content:flex-end; margin-top:12px"}, actions);
+  const foot=el("div",{class:"row", style:"justify-content:flex-end; margin-top:12px"}, actions);
   wrap.appendChild(head);
   wrap.appendChild(el("div",{style:"margin-top:10px"},[bodyNode]));
   wrap.appendChild(foot);

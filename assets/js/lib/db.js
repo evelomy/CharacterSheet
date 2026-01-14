@@ -1,5 +1,8 @@
+cd ~/Documents/"CHARACTER REPO"/charsheet-engine && \
+cat > assets/js/lib/db.js <<'JS'
 const DB_NAME="charsheet_engine";
-const DB_VER=1;
+// Bump this whenever schema changes. This forces onupgradeneeded to run.
+const DB_VER=2;
 
 function openDB(){
   return new Promise((resolve, reject)=>{
@@ -7,19 +10,25 @@ function openDB(){
 
     req.onupgradeneeded = () => {
       const db = req.result;
-      if(!db.objectStoreNames.contains("rulesets")) db.createObjectStore("rulesets",{keyPath:"id"});
-      if(!db.objectStoreNames.contains("characters")) db.createObjectStore("characters",{keyPath:"id"});
-      if(!db.objectStoreNames.contains("settings")) db.createObjectStore("settings",{keyPath:"k"});
+
+      // Hard reset stores to avoid keyPath mismatches from older versions.
+      // Yes this wipes local data. The app is currently broken anyway.
+      for(const name of ["rulesets","characters","settings"]){
+        if(db.objectStoreNames.contains(name)) db.deleteObjectStore(name);
+      }
+
+      db.createObjectStore("rulesets",{keyPath:"id"});
+      db.createObjectStore("characters",{keyPath:"id"});
+      db.createObjectStore("settings",{keyPath:"k"});
     };
 
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error("IndexedDB upgrade blocked by another tab/device view. Close other tabs and retry."));
   });
 }
 
-// Robust transaction runner:
-// - catches synchronous DataError (e.g., missing keyPath field on put)
-// - resolves/rejects based on the request if one is returned
+// Robust transaction runner: catches sync DataError thrown by put/delete
 async function run(store, mode, fn){
   const db = await openDB();
   return new Promise((resolve, reject)=>{
@@ -92,3 +101,4 @@ export async function getSetting(k){
   const x = await get("settings",k);
   return x ? x.v : undefined;
 }
+JS

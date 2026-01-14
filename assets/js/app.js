@@ -1,348 +1,531 @@
-import { register, start, go, setRouteCallback } from "./ui/router.js";
-import { el, qs } from "./lib/utils.js";
-import { icons } from "./ui/icons.js";
-import { toast } from "./ui/toast.js";
-import { modal } from "./ui/modal.js";
-import { idb } from "./lib/idb.js";
-import { state, loadSettings, refreshRulesets, refreshCharacters, setActiveCharacter, setActiveRuleset } from "./lib/state.js";
-import { validateRuleset, listClasses } from "./lib/ruleset.js";
-import { deriveCharacter, buildLevelUpPlan, listOptionsForChoice, applyLevelUp } from "./lib/engine.js";
+import { el, modal, toast, qs } from "./lib/ui.js";
+import { start, route, go } from "./lib/router.js";
+import * as db from "./lib/db.js";
+import { profBonus, abilityMod, buildLevelUpPlan, applyLevelUp, poolByKey, filterOptions } from "./lib/engine.js";
 
-/* --- Helpers --- */
+const BUILD_ID = "rebuild2-1768422552";
 
-function navItem(path, icon, label){
-  const a = el("a", {href:"#"+path, "data-nav":"1"}, [
-    el("div", {html: icon}),
-    el("div", {}, label),
-  ]);
-  a.addEventListener("click", (e)=>{ e.preventDefault(); go(path); });
-  return a;
+function crashOverlay(err){
+  const wrap=document.createElement("div");
+  wrap.className="errOverlay";
+  wrap.innerHTML = `<h2>App crashed (sorry)</h2>
+  <div class="small">Build: ${BUILD_ID}</div>
+  <pre>${(err && (err.stack||err.message)) || String(err)}</pre>`;
+  document.body.appendChild(wrap);
 }
 
-function labelForClass(rs, classId){
-  return rs?.classes?.[classId]?.name || classId || "Unknown Class";
-}
+window.addEventListener("error", (e)=>{ crashOverlay(e.error || e.message); });
+window.addEventListener("unhandledrejection", (e)=>{ crashOverlay(e.reason); });
 
-function initialsNode(name){
-  return el("div", {}, (name||"?").split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0]).join("").toUpperCase() || "?");
-}
+const DEFAULT_RULESET = {
+  id: "core-empty",
+  name: "Empty Ruleset",
+  version: "1.0.0",
+  classes: {},
+  spells: [],
+  infusions: []
+};
 
-function field(label, inputNode){
-  return el("div", {class:"field"}, [
-    el("label", {}, label),
-    inputNode
-  ]);
-}
+const DEFAULT_CHAR = ()=>({
+  id: crypto.randomUUID(),
+  name: "New Character",
+  classId: null,
+  level: 1,
+  abilities: {str:10,dex:10,con:10,int:10,wis:10,cha:10},
+  hp: {current: 1, max: 1, temp: 0},
+  ac: 10,
+  speed: 30,
+  inventory: [],
+  notes: "",
+  portrait: null,
+  createdAt: Date.now(),
+  updatedAt: Date.now(),
+  rulesetId: null,
+});
 
-function classSelect(classes, id, value=null){
-  const s = el("select", {class:"select", id});
-  for(const c of classes){
-    const o = el("option", {value:c.id}, c.name || c.id);
-    if(value && value === c.id) o.selected = true;
-    s.appendChild(o);
+async function loadAppState(){
+  const rulesetId = await db.getSetting("activeRulesetId") || DEFAULT_RULESET.id;
+  const charId = await db.getSetting("activeCharId") || null;
+  const rulesets = await db.getAll("rulesets");
+  let rs = rulesets.find(r=>r.id===rulesetId) || null;
+  if(!rs){
+    rs = DEFAULT_RULESET;
+    await db.put("rulesets", rs);
   }
-  return s;
+  const chars = await db.getAll("characters");
+  const chRec = charId ? chars.find(c=>c.id===charId) : null;
+  return { rs, rulesets, chars, ch: chRec?.data || null, activeCharId: charId };
 }
 
-function abilityMod(score){
-  const s = parseInt(score,10) || 10;
-  return Math.floor((s - 10)/2);
+async function setActiveRuleset(id){
+  await db.setSetting("activeRulesetId", id);
+}
+async function setActiveCharacter(id){
+  await db.setSetting("activeCharId", id);
 }
 
-function safeName(n){
-  return (n||"character").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,64) || "character";
+function derivedFor(ch){
+  const level = ch.level ?? 1;
+  const pb = profBonus(level);
+  const mods = {};
+  for(const [k,v] of Object.entries(ch.abilities||{})) mods[k]=abilityMod(v);
+  const init = mods.dex || 0;
+  const spellAtk = pb + (mods.int||0);
+  const spellDC = 8 + pb + (mods.int||0);
+  return { pb, mods, init, spellAtk, spellDC };
 }
 
-/* --- Layout --- */
-
-function shell(contentNode){
-  const path = location.hash.replace(/^#/, "") || "/home";
-  const sidebar = el("aside", {class:"sidebar"}, [
-    el("div", {class:"brand"}, [
-      el("div", {html: icons.box}),
-      el("div", {class:"vstack", style:"gap:2px"}, [
-        el("div", {class:"title"}, "CharSheet Engine"),
-        el("div", {class:"sub"}, "Local-only. Pretty. No cloud.")
-      ])
+function topBar(state){
+  const rsSel = el("select", {onchange: async(e)=>{ await setActiveRuleset(e.target.value); location.reload(); }}, [
+    ...state.rulesets.map(r=>el("option",{value:r.id, ...(r.id===state.rs.id?{selected:"selected"}:{})},[`${r.name} (${r.id})`]))
+  ]);
+  const importBtn = el("button",{class:"btn", onclick:()=>openRulesetImport()},["Import Ruleset JSON"]);
+  const exportBtn = el("button",{class:"btn", onclick:()=>openRulesetExport(state.rs)},["Export Ruleset"]);
+  return el("div",{class:"card row", style:"justify-content:space-between; flex-wrap:wrap"},[
+    el("div",{class:"row", style:"flex-wrap:wrap"},[
+      el("div",{class:"pill"},[el("b",{},["CharacterSheet"]), el("span",{class:"small"},`Build ${BUILD_ID}`)]),
+      rsSel,
     ]),
-    el("div", {class:"nav"}, [
-      navItem("/home", icons.home, "Home"),
-      navItem("/characters", icons.users, "Characters"),
-      navItem("/sheet", icons.sheet, "Sheet"),
-      navItem("/levelup", icons.bolt, "Level Up"),
-      navItem("/rulesets", icons.box, "Rulesets"),
-      navItem("/settings", icons.settings, "Settings"),
-    ])
-  ]);
-
-  sidebar.querySelectorAll("a[data-nav]").forEach(a=>{
-    if(a.getAttribute("href")?.replace(/^#/, "") === path) a.classList.add("active");
-  });
-
-  const scrim = el("div", {class:"scrim"});
-  const topbar = el("div", {class:"topbar"}, [
-    el("button", {class:"btn ghost small", html: icons.menu, onclick: ()=>openSidebar(true)}),
-    el("div", {style:"font-weight:800"}, titleFor(path)),
-    el("div", {class:"spacer"}),
-    el("span", {class:"badge"}, state.character?.level ? `Lvl ${state.character.level}` : "No char"),
-  ]);
-
-  function openSidebar(open){
-    if(window.innerWidth > 980) return;
-    if(open){
-      sidebar.classList.add("open");
-      scrim.addEventListener("click", ()=>openSidebar(false), {once:true});
-      document.body.appendChild(scrim);
-    }else{ sidebar.classList.remove("open"); scrim.remove(); }
-  }
-
-  const layout = el("div", {}, [
-    topbar,
-    el("div", {class:"shell"}, [sidebar, el("main", {class:"content"}, contentNode)])
-  ]);
-
-  return layout;
-}
-
-function titleFor(path){
-  const titles = {"/home":"Home","/characters":"Characters","/sheet":"Sheet","/levelup":"Level Up","/rulesets":"Rulesets","/settings":"Settings"};
-  return titles[path] || "CharSheet Engine";
-}
-
-function pageTitle(h, p, actions=[]){
-  return el("div", {class:"page-title"}, [
-    el("div", {}, [el("h1", {}, h), p ? el("p", {}, p) : null]),
-    el("div", {class:"hstack", style:"flex-wrap:wrap; justify-content:flex-end"}, actions)
+    el("div",{class:"row", style:"flex-wrap:wrap"},[importBtn, exportBtn])
   ]);
 }
 
-/* --- Data Logic --- */
-
-async function init(){
-  await loadSettings();
-  await refreshRulesets();
-  await refreshCharacters();
-
-  if(!state.rulesets.length){
-    try {
-      const demo = await fetch("./data/ruleset.template.json").then(r=>r.json());
-      await idb.put("rulesets", {id: demo.meta.id, meta: demo.meta, data: demo, importedAt: Date.now()});
-      await setActiveRuleset(demo.meta.id);
-      await refreshRulesets();
-    } catch(e) { console.warn("No template ruleset found."); }
-  }
+function openRulesetImport(){
+  const file = el("input",{type:"file", accept:"application/json"});
+  const body = el("div",{class:"col"},[
+    el("div",{class:"small"},["Pick a ruleset JSON to import. Stored locally in IndexedDB."]),
+    file
+  ]);
+  modal("Import Ruleset", body, [
+    el("button",{class:"btn primary", onclick: async()=>{
+      const f=file.files?.[0]; if(!f) return toast("No file selected");
+      const txt=await f.text();
+      const rs=JSON.parse(txt);
+      if(!rs.id) rs.id = crypto.randomUUID();
+      if(!rs.name) rs.name = rs.id;
+      rs.version = rs.version || "1.0.0";
+      rs.classes = rs.classes || {};
+      rs.spells = rs.spells || [];
+      rs.infusions = rs.infusions || [];
+      await db.put("rulesets", rs);
+      await setActiveRuleset(rs.id);
+      toast("Imported ruleset");
+      location.reload();
+    }},["Import"])
+  ]);
 }
 
-function makeNewCharacter({name, classId, level=1}){
-  return {
-    id: crypto.randomUUID?.() || ("ch_"+Math.random().toString(16).slice(2)),
-    name, classId, level,
-    abilities: {str:10,dex:10,con:10,int:10,wis:10,cha:10},
-    choices: {}, notes: "", createdAt: Date.now(), updatedAt: Date.now()
-  };
+function openRulesetExport(rs){
+  const txt = JSON.stringify(rs, null, 2);
+  const blob = new Blob([txt], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = el("a",{href:url, download:`${rs.id}.json`},["Download ruleset JSON"]);
+  const body = el("div",{class:"col"},[
+    el("div",{class:"small"},["Export will download the active ruleset as JSON."]),
+    a
+  ]);
+  modal("Export Ruleset", body, [
+    el("button",{class:"btn primary", onclick:()=>{ a.click(); }},["Download"])
+  ]);
 }
 
-async function saveCharacter(ch, {setActive=false}={}){
-  const rec = { id: ch.id, name: ch.name, data: ch, updatedAt: Date.now(), rulesetId: state.rulesetId };
-  await idb.put("characters", rec);
-  if(setActive){ await setActiveCharacter(ch.id); }
-}
-
-async function loadPortrait(characterId){
-  const p = await idb.get("portraits", characterId);
-  return p?.blob ? URL.createObjectURL(p.blob) : null;
-}
-
-/* --- Pages --- */
-
-async function Home(){
-  const rs = state.ruleset;
-  const ch = state.character;
-  const derived = (rs && ch) ? deriveCharacter(rs, ch).derived : null;
-
-  const actions = [
-    el("button", {class:"btn primary", html: icons.sheet, onclick: ()=>go("/sheet")}, ["Sheet"]),
-    el("button", {class:"btn", html: icons.users, onclick: ()=>go("/characters")}, ["Switch"])
-  ];
-
-  const hero = el("div", {class:"card"}, [
-    el("div", {class:"grid cols2"}, [
-      el("div", {}, [
-        el("div", {class:"small"}, "Active Character"),
-        el("div", {style:"font-size:22px;font-weight:900"}, ch?.name || "None"),
-        el("div", {class:"small"}, `${labelForClass(rs, ch?.classId)} • Lvl ${ch?.level || "-"}`),
-        el("div", {class:"small"}, `Ruleset: ${rs?.meta?.name || "None"}`)
+function homeView(state){
+  const list = el("div",{class:"col"},[]);
+  for(const rec of state.chars){
+    const isActive = rec.id === state.activeCharId;
+    list.appendChild(el("div",{class:"card row", style:"justify-content:space-between; align-items:center"},[
+      el("div",{class:"col", style:"gap:4px"},[
+        el("b",{},[rec.name || "Unnamed"]),
+        el("div",{class:"small"},[`id: ${rec.id}`])
       ]),
-      el("div", {class:"grid cols2"}, [
-        el("button", {class:"btn block", html: icons.download, onclick: ()=>exportCharacter(ch)}, ["Export"]),
-        el("button", {class:"btn block danger", html: icons.trash, onclick: ()=>nukeAll()}, ["Reset All"])
-      ])
-    ])
-  ]);
-
-  return shell(el("div", {}, [pageTitle("Home", "Local character manager.", actions), hero]));
-}
-
-async function Characters(){
-  const cont = el("div", {}, [pageTitle("Characters", "Manage your roster.", [
-    el("button", {class:"btn primary", html: icons.plus, onclick: ()=>createCharacterModal()}, ["New"])
-  ])]);
-
-  const list = el("div", {class:"grid"}, []);
-  for(const rec of state.characters){
-    const ch = rec.data;
-    const avatar = el("div", {class:"avatar"}, [initialsNode(ch.name)]);
-    loadPortrait(ch.id).then(url => { if(url) avatar.innerHTML = `<img src="${url}">`; });
-
-    list.appendChild(el("div", {class:"card tight"}, [
-      el("div", {class:"char-card"}, [
-        avatar,
-        el("div", {class:"char-meta"}, [el("div", {class:"name"}, ch.name), el("div", {class:"sub"}, `Level ${ch.level} ${labelForClass(state.ruleset, ch.classId)}`)]),
-        el("div", {class:"char-actions"}, [
-          el("button", {class:"btn small primary", onclick: async ()=>{ await setActiveCharacter(ch.id); go("/sheet"); }}, ["Open"]),
-          el("button", {class:"btn small danger", onclick: ()=>deleteCharacter(ch)}, [icons.trash])
-        ])
+      el("div",{class:"row", style:"flex-wrap:wrap"},[
+        el("span",{class:`badge ${isActive?"ok":""}`},[isActive?"Active":"Saved"]),
+        el("button",{class:"btn primary", onclick: async()=>{ await setActiveCharacter(rec.id); go(`/sheet?id=${rec.id}`); }},["Open"]),
+        el("button",{class:"btn danger", onclick: async()=>{
+          if(!confirm("Delete character?")) return;
+          await db.del("characters", rec.id);
+          if(isActive) await setActiveCharacter(null);
+          location.reload();
+        }},["Delete"])
       ])
     ]));
   }
-  cont.appendChild(list);
-  return shell(cont);
+  const createBtn = el("button",{class:"btn primary", onclick:()=>openCreateCharacter(state)},["New Character"]);
+  return el("div",{class:"col"},[
+    el("div",{class:"card"},[
+      el("h2",{},["Characters"]),
+      el("div",{class:"small"},["Stored locally (IndexedDB). Each device keeps its own data."]),
+      el("div",{style:"margin-top:10px"},[createBtn])
+    ]),
+    list
+  ]);
 }
 
-async function Sheet(){
-  const rs = state.ruleset;
-  const ch = state.character;
-  if(!rs || !ch) return shell(el("div", {class:"card"}, "Select a character and ruleset first."));
+function openCreateCharacter(state){
+  const ch = DEFAULT_CHAR();
+  const name = el("input",{value:ch.name});
+  const classSel = el("select",{},[
+    el("option",{value:""},["(no class)"]),
+    ...Object.entries(state.rs.classes||{}).map(([id,c])=>el("option",{value:id},[c.name||id]))
+  ]);
+  const lvl = el("input",{type:"number", min:"1", max:"20", value:String(ch.level)});
+  const body = el("div",{class:"grid cols2"},[
+    el("div",{class:"col"},[el("div",{class:"small"},["Name"]), name]),
+    el("div",{class:"col"},[el("div",{class:"small"},["Class"]), classSel]),
+    el("div",{class:"col"},[el("div",{class:"small"},["Level"]), lvl]),
+    el("div",{class:"col"},[el("div",{class:"small"},["Ruleset"]), el("div",{class:"pill"},[state.rs.name])]),
+  ]);
+  modal("New Character", body, [
+    el("button",{class:"btn primary", onclick: async()=>{
+      ch.name = name.value.trim() || "Character";
+      ch.classId = classSel.value || null;
+      ch.level = Math.max(1, Math.min(20, parseInt(lvl.value||"1",10)));
+      ch.rulesetId = state.rs.id;
+      await db.put("characters",{id: ch.id, name: ch.name, data: ch, updatedAt: Date.now()});
+      await setActiveCharacter(ch.id);
+      go(`/sheet?id=${ch.id}`);
+    }},["Create"])
+  ]);
+}
 
-  const {derived} = deriveCharacter(rs, ch);
-  const avatar = el("div", {class:"avatar"}, [initialsNode(ch.name)]);
-  loadPortrait(ch.id).then(url => { if(url) avatar.innerHTML = `<img src="${url}">`; });
+async function saveCharacter(state, ch){
+  ch.updatedAt = Date.now();
+  await db.put("characters",{id: ch.id, name: ch.name, data: ch, updatedAt: Date.now(), rulesetId: state.rs.id});
+}
 
-  const header = el("div", {class:"card"}, [
-    el("div", {class:"hstack"}, [
-      avatar,
-      el("div", {class:"vstack"}, [
-        el("div", {style:"font-size:24px;font-weight:900"}, ch.name),
-        el("div", {class:"small"}, `Level ${ch.level} ${labelForClass(rs, ch.classId)} • PB +${derived.proficiencyBonus}`)
+function sheetView(state, ch){
+  if(!ch) return el("div",{class:"card"},[el("h2",{},["No character selected"]), el("button",{class:"btn primary", onclick:()=>go("/")},["Back"])]);
+  const d = derivedFor(ch);
+
+  const portrait = el("img",{class:"portrait", src: ch.portrait || ""});
+  if(!ch.portrait) portrait.style.display="none";
+  const up = el("input",{type:"file", accept:"image/*", onchange: async(e)=>{
+    const f=e.target.files?.[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload=async()=>{ ch.portrait = reader.result; await saveCharacter(state,ch); location.reload(); };
+    reader.readAsDataURL(f);
+  }});
+  const rmPic = el("button",{class:"btn", onclick: async()=>{ ch.portrait=null; await saveCharacter(state,ch); location.reload(); }},["Remove"]);
+
+  // HP controls
+  const hpAmt = el("input",{type:"number", value:"5", min:"0"});
+  const hpCur = el("input",{type:"number", value:String(ch.hp.current)});
+  const hpMax = el("input",{type:"number", value:String(ch.hp.max)});
+  const hpTemp = el("input",{type:"number", value:String(ch.hp.temp||0)});
+
+  const applyHP = async(delta)=>{
+    const amt = Math.max(0, parseInt(hpAmt.value||"0",10));
+    let cur = parseInt(hpCur.value||"0",10);
+    let tmp = parseInt(hpTemp.value||"0",10);
+    if(delta<0){
+      let dmg = amt;
+      if(tmp>0){
+        const used = Math.min(tmp, dmg);
+        tmp -= used;
+        dmg -= used;
+      }
+      cur = Math.max(0, cur - dmg);
+    }else{
+      cur = Math.min(parseInt(hpMax.value||"0",10), cur + amt);
+    }
+    ch.hp.current = cur; ch.hp.max = parseInt(hpMax.value||"1",10); ch.hp.temp = tmp;
+    await saveCharacter(state,ch);
+    location.reload();
+  };
+
+  const stats = el("div",{class:"grid cols3"}, Object.entries(ch.abilities).map(([k,v])=>{
+    const mod=d.mods[k]||0;
+    return el("div",{class:"card"},[
+      el("div",{class:"row", style:"justify-content:space-between"},[
+        el("b",{},[k.toUpperCase()]),
+        el("span",{class:"badge"},[mod>=0?`+${mod}`:`${mod}`])
       ]),
-      el("div", {class:"spacer"}),
-      el("button", {class:"btn primary", html: icons.bolt, onclick: ()=>go("/levelup")}, ["Level Up"])
-    ])
-  ]);
-
-  const stats = el("div", {class:"card"}, [
-    el("div", {style:"font-weight:900"}, "Abilities"),
-    el("div", {class:"grid cols3", style:"margin-top:10px"}, Object.entries(ch.abilities).map(([k,v])=> el("div", {class:"card soft tight"}, [
-      el("div", {class:"small"}, k.toUpperCase()),
-      el("div", {style:"font-size:20px;font-weight:900"}, String(v)),
-      el("div", {class:"small"}, `${abilityMod(v)>=0?"+":""}${abilityMod(v)}`)
-    ])))
-  ]);
-
-  const notes = el("div", {class:"card"}, [
-    el("div", {style:"font-weight:900"}, "Notes"),
-    el("textarea", {class:"textarea", style:"margin-top:10px", value: ch.notes, oninput: async (e)=>{
-      ch.notes = e.target.value;
-      await saveCharacter(ch);
-    }})
-  ]);
-
-  return shell(el("div", {}, [header, el("div", {class:"grid cols2"}, [stats, notes])]));
-}
-
-async function LevelUp(){
-  const rs = state.ruleset;
-  const ch = state.character;
-  if(!rs || !ch) return shell(el("div", {class:"card"}, "Setup required."));
-
-  const nextLevel = Math.min(20, (ch.level||1) + 1);
-  const plan = buildLevelUpPlan(rs, ch, nextLevel);
-  const choiceState = {};
-
-  const cont = el("div", {}, [pageTitle("Level Up", `Advancing to Level ${nextLevel}`, [])]);
-  const blocks = el("div", {class:"vstack"}, plan.choices.map(choice => {
-    const options = listOptionsForChoice(rs, ch, choice);
-    return el("div", {class:"card"}, [
-      el("div", {style:"font-weight:800"}, choice.title || choice.id),
-      el("div", {style:"margin-top:10px"}, renderChoice(choice, options, choiceState))
+      el("div",{class:"small"},[`Score: ${v}`])
     ]);
   }));
 
-  cont.appendChild(blocks);
-  cont.appendChild(el("button", {class:"btn primary block", style:"margin-top:20px", onclick: async ()=>{
-    const newCh = applyLevelUp(rs, structuredClone(ch), plan, choiceState);
-    await saveCharacter(newCh, {setActive:true});
-    await refreshCharacters();
-    go("/sheet");
-  }}, ["Apply Level Up"]));
-
-  return shell(cont);
-}
-
-function renderChoice(choice, options, choiceState){
-  const count = choice.count || 1;
-  const wrap = el("div", {class:"grid cols2"});
-  const selected = new Set();
-  options.forEach(opt => {
-    const id = opt.id || opt.name;
-    const b = el("button", {class:"btn block", onclick: ()=>{
-      if(selected.has(id)) selected.delete(id);
-      else if(selected.size < count) selected.add(id);
-      choiceState[choice.id] = Array.from(selected);
-      wrap.querySelectorAll("button").forEach(btn => btn.classList.toggle("primary", selected.has(btn.textContent)));
-    }}, opt.name);
-    wrap.appendChild(b);
-  });
-  return wrap;
-}
-
-/* --- Modals --- */
-
-function createCharacterModal(){
-  const rs = state.ruleset;
-  const classes = listClasses(rs);
-  const body = el("div", {class:"vstack"}, [
-    field("Name", el("input", {class:"input", id:"nc_name", value:"New Hero"})),
-    field("Class", classSelect(classes, "nc_class"))
+  const header = el("div",{class:"card row", style:"justify-content:space-between; flex-wrap:wrap"},[
+    el("div",{class:"row", style:"gap:14px; align-items:center; flex-wrap:wrap"},[
+      portrait,
+      el("div",{class:"col", style:"gap:6px"},[
+        el("h2",{},[ch.name]),
+        el("div",{class:"row", style:"flex-wrap:wrap"},[
+          el("span",{class:"pill"},[el("b",{},["Class"]), el("span",{class:"small"},[ch.classId? (state.rs.classes?.[ch.classId]?.name||ch.classId):"(none)"])]),
+          el("span",{class:"pill"},[el("b",{},["Level"]), el("span",{class:"small"},[String(ch.level)])]),
+          el("span",{class:"pill"},[el("b",{},["PB"]), el("span",{class:"small"},[`+${d.pb}`])]),
+          el("span",{class:"pill"},[el("b",{},["Init"]), el("span",{class:"small"},[d.init>=0?`+${d.init}`:`${d.init}`])]),
+          el("span",{class:"pill"},[el("b",{},["Spell DC"]), el("span",{class:"small"},[String(d.spellDC)])]),
+        ])
+      ])
+    ]),
+    el("div",{class:"row", style:"flex-wrap:wrap"},[
+      el("button",{class:"btn", onclick:()=>openEditCharacter(state,ch)},["Edit"]),
+      el("button",{class:"btn primary", onclick:()=>openLevelUp(state,ch)},["Level Up"]),
+      el("button",{class:"btn", onclick:()=>go("/")},["Back"])
+    ])
   ]);
-  const m = modal({title:"New Character", body, footer: el("button", {class:"btn primary", onclick: async ()=>{
-    const ch = makeNewCharacter({name: qs("#nc_name", m.wrap).value, classId: qs("#nc_class", m.wrap).value});
-    await saveCharacter(ch, {setActive:true});
-    await refreshCharacters();
-    m.close();
-    go("/sheet");
-  }}, ["Create"])});
+
+  const hpCard = el("div",{class:"card"},[
+    el("h3",{},["HP Tracker"]),
+    el("div",{class:"grid cols3"},[
+      el("div",{},[el("div",{class:"small"},["Current"]), hpCur]),
+      el("div",{},[el("div",{class:"small"},["Max"]), hpMax]),
+      el("div",{},[el("div",{class:"small"},["Temp"]), hpTemp]),
+    ]),
+    el("div",{class:"row", style:"margin-top:10px; flex-wrap:wrap"},[
+      el("div",{class:"pill"},[el("span",{class:"small"},["Amount"]), hpAmt]),
+      el("button",{class:"btn danger", onclick:()=>applyHP(-1)},["Damage"]),
+      el("button",{class:"btn primary", onclick:()=>applyHP(+1)},["Heal"]),
+      el("button",{class:"btn", onclick: async()=>{ ch.hp.temp=0; await saveCharacter(state,ch); location.reload(); }},["Clear Temp"])
+    ])
+  ]);
+
+  const defenses = el("div",{class:"card"},[
+    el("h3",{},["Defenses"]),
+    el("div",{class:"grid cols3"},[
+      el("div",{},[el("div",{class:"small"},["AC"]), el("div",{class:"pill"},[String(ch.ac)])]),
+      el("div",{},[el("div",{class:"small"},["Speed"]), el("div",{class:"pill"},[String(ch.speed)])]),
+      el("div",{},[el("div",{class:"small"},["Spell Attack"]), el("div",{class:"pill"},[d.spellAtk>=0?`+${d.spellAtk}`:`${d.spellAtk}`])]),
+    ])
+  ]);
+
+  const invList = el("div",{class:"col"},[]);
+  for(const [idx,item] of (ch.inventory||[]).entries()){
+    invList.appendChild(el("div",{class:"card row", style:"justify-content:space-between; align-items:center"},[
+      el("div",{class:"col", style:"gap:4px"},[
+        el("b",{},[item.name || "Item"]),
+        el("div",{class:"small"},[`qty: ${item.qty || 1}${item.notes?` | ${item.notes}`:""}`])
+      ]),
+      el("button",{class:"btn danger", onclick: async()=>{
+        ch.inventory.splice(idx,1);
+        await saveCharacter(state,ch);
+        location.reload();
+      }},["Remove"])
+    ]));
+  }
+  const addInv = el("button",{class:"btn primary", onclick:()=>openAddInventory(state,ch)},["Add Item"]);
+  const invCard = el("div",{class:"card"},[
+    el("h3",{},["Inventory"]),
+    addInv,
+    el("div",{style:"margin-top:10px"},[invList])
+  ]);
+
+  const spellsCard = renderSpellSummary(state, ch);
+  const infCard = renderInfusionSummary(state, ch);
+
+  return el("div",{class:"col"},[
+    header,
+    el("div",{class:"grid cols2"},[hpCard, defenses]),
+    stats,
+    el("div",{class:"grid cols2"},[invCard, el("div",{class:"card"},[
+      el("h3",{},["Notes"]),
+      el("div",{class:"small"},["Free text."]),
+      el("pre",{style:"white-space:pre-wrap; margin:0"},[ch.notes||""])
+    ])]),
+    el("div",{class:"grid cols2"},[spellsCard, infCard]),
+    el("div",{class:"card"},[
+      el("h3",{},["Portrait"]),
+      el("div",{class:"row", style:"flex-wrap:wrap"},[up, rmPic]),
+      el("div",{class:"small", style:"margin-top:8px"},["Stored locally per device in IndexedDB (as a data URL)."])
+    ])
+  ]);
 }
 
-async function nukeAll(){
-  if(!confirm("Erase all local data?")) return;
-  await idb.clear("rulesets"); await idb.clear("characters"); await idb.clear("portraits");
-  location.reload();
+function renderSpellSummary(state, ch){
+  const rs=state.rs;
+  const spells = rs.spells || [];
+  const known = [];
+  // accumulate chosen spell picks from choices (generic)
+  for(const picks of Object.values(ch.choices||{})){
+    for(const id of (picks||[])){
+      const s = spells.find(x=>x.id===id || x.name===id);
+      if(s) known.push(s);
+    }
+  }
+  const list = el("div",{class:"col"},[]);
+  if(!spells.length){
+    list.appendChild(el("div",{class:"small"},["No spells in this ruleset."]));
+  }else if(!known.length){
+    list.appendChild(el("div",{class:"small"},["No selected spells yet (use Level Up choices if ruleset defines them)."]));
+  }else{
+    for(const s of known.slice(0,30)){
+      list.appendChild(el("div",{class:"pill"},[`${s.name} (L${s.level})`]));
+    }
+    if(known.length>30) list.appendChild(el("div",{class:"small"},[`+${known.length-30} more`]));
+  }
+  return el("div",{class:"card"},[
+    el("h3",{},["Spells (summary)"]),
+    list
+  ]);
 }
 
-async function exportCharacter(ch){
-  const blob = new Blob([JSON.stringify(ch, null, 2)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = `${safeName(ch.name)}.json`;
-  a.click();
+function renderInfusionSummary(state, ch){
+  const rs=state.rs;
+  const inf = rs.infusions || [];
+  const picked = (ch.choices||{}).pick_infusions_lvl2 || (ch.choices||{}).infusions || [];
+  const list=el("div",{class:"col"},[]);
+  if(!inf.length){
+    list.appendChild(el("div",{class:"small"},["No infusions in this ruleset."]));
+  }else if(!picked.length){
+    list.appendChild(el("div",{class:"small"},["No selected infusions yet (use Level Up)."]));
+  }else{
+    for(const id of picked){
+      const it = inf.find(x=>x.id===id || x.name===id);
+      list.appendChild(el("div",{class:"pill"},[it?it.name:id]));
+    }
+  }
+  return el("div",{class:"card"},[
+    el("h3",{},["Infusions (selected)"]),
+    list
+  ]);
 }
 
-async function deleteCharacter(ch){
-  if(!confirm(`Delete ${ch.name}?`)) return;
-  await idb.del("characters", ch.id);
-  await refreshCharacters();
-  go("/characters");
+function openAddInventory(state, ch){
+  const name=el("input",{});
+  const qty=el("input",{type:"number", value:"1", min:"1"});
+  const notes=el("input",{});
+  const body=el("div",{class:"grid cols2"},[
+    el("div",{},[el("div",{class:"small"},["Name"]), name]),
+    el("div",{},[el("div",{class:"small"},["Qty"]), qty]),
+    el("div",{style:"grid-column:1/-1"},[el("div",{class:"small"},["Notes"]), notes]),
+  ]);
+  modal("Add Inventory Item", body, [
+    el("button",{class:"btn primary", onclick: async()=>{
+      ch.inventory = ch.inventory || [];
+      ch.inventory.push({name:name.value.trim()||"Item", qty: parseInt(qty.value||"1",10), notes: notes.value.trim()||""});
+      await saveCharacter(state,ch);
+      location.reload();
+    }},["Add"])
+  ]);
 }
 
-/* --- Routes --- */
+function openEditCharacter(state, ch){
+  // normalize
+  ch.abilities ??= {str:10,dex:10,con:10,int:10,wis:10,cha:10};
+  ch.hp ??= {current:1,max:1,temp:0};
+  ch.inventory ??= [];
 
-register("/home", Home);
-register("/characters", Characters);
-register("/sheet", Sheet);
-register("/levelup", LevelUp);
-register("/rulesets", async ()=>shell(el("div", {class:"card"}, "Ruleset Management coming in v1.1")));
-register("/settings", async ()=>shell(el("div", {class:"card"}, "Settings coming in v1.1")));
-register("/404", async ()=>shell(el("div", {}, "404 Not Found")));
+  const name=el("input",{value: ch.name || ""});
+  const cls=el("select",{},[
+    el("option",{value:""},["(no class)"]),
+    ...Object.entries(state.rs.classes||{}).map(([id,c])=>el("option",{value:id, ...(id===ch.classId?{selected:"selected"}:{})},[c.name||id]))
+  ]);
+  const lvl=el("input",{type:"number", min:"1", max:"20", value:String(ch.level||1)});
+  const ac=el("input",{type:"number", value:String(ch.ac||10)});
+  const spd=el("input",{type:"number", value:String(ch.speed||30)});
+  const hpmax=el("input",{type:"number", value:String(ch.hp.max||1)});
+  const notes=el("textarea",{value: ch.notes || ""});
 
-await init();
-start();
+  const abInputs = {};
+  const abGrid = el("div",{class:"grid cols3"}, Object.entries(ch.abilities).map(([k,v])=>{
+    const inp=el("input",{type:"number", value:String(v), min:"1", max:"30"});
+    abInputs[k]=inp;
+    return el("div",{},[el("div",{class:"small"},[k.toUpperCase()]), inp]);
+  }));
+
+  const body=el("div",{class:"col"},[
+    el("div",{class:"grid cols2"},[
+      el("div",{},[el("div",{class:"small"},["Name"]), name]),
+      el("div",{},[el("div",{class:"small"},["Class"]), cls]),
+      el("div",{},[el("div",{class:"small"},["Level"]), lvl]),
+      el("div",{},[el("div",{class:"small"},["AC"]), ac]),
+      el("div",{},[el("div",{class:"small"},["Speed"]), spd]),
+      el("div",{},[el("div",{class:"small"},["HP Max"]), hpmax]),
+    ]),
+    el("hr",{}),
+    el("h3",{},["Ability Scores"]),
+    abGrid,
+    el("hr",{}),
+    el("h3",{},["Notes"]),
+    notes
+  ]);
+
+  modal("Edit Character", body, [
+    el("button",{class:"btn primary", onclick: async()=>{
+      ch.name = name.value.trim() || "Character";
+      ch.classId = cls.value || null;
+      ch.level = Math.max(1, Math.min(20, parseInt(lvl.value||"1",10)));
+      ch.ac = parseInt(ac.value||"10",10);
+      ch.speed = parseInt(spd.value||"30",10);
+      ch.hp.max = Math.max(1, parseInt(hpmax.value||"1",10));
+      // clamp current
+      ch.hp.current = Math.min(ch.hp.current||ch.hp.max, ch.hp.max);
+      for(const k of Object.keys(ch.abilities)){
+        ch.abilities[k] = Math.max(1, Math.min(30, parseInt(abInputs[k].value||"10",10)));
+      }
+      ch.notes = notes.value;
+      await saveCharacter(state, ch);
+      toast("Saved");
+      location.reload();
+    }},["Save"])
+  ]);
+}
+
+function openLevelUp(state, ch){
+  if(!ch.classId) return toast("Set a class first");
+  const next = Math.min(20, (ch.level||1)+1);
+  const plan = buildLevelUpPlan(state.rs, ch, next);
+
+  const body = el("div",{class:"col"},[
+    el("div",{class:"pill"},[el("b",{},["Next level"]), ` ${next}`]),
+    el("div",{class:"small"},[`Grants: ${plan.grants.length ? plan.grants.join(", ") : "none"}`]),
+  ]);
+
+  const choiceUIs = [];
+  const results = {};
+  for(const choice of (plan.choices||[])){
+    const opts = filterOptions(poolByKey(state.rs, choice.from), choice.filter||{}, {level: next, classId: ch.classId});
+    const sel = el("select",{multiple:"multiple", size:String(Math.min(10, Math.max(4, opts.length||4)))});
+    for(const o of opts){
+      const id = o.id || o.name;
+      sel.appendChild(el("option",{value:id},[o.name||id]));
+    }
+    choiceUIs.push(el("div",{class:"card"},[
+      el("b",{},[choice.title || choice.id]),
+      el("div",{class:"small"},[choice.help || ""]),
+      sel
+    ]));
+    results[choice.id] = ()=>Array.from(sel.selectedOptions).slice(0, choice.count||999).map(x=>x.value);
+  }
+
+  if(!choiceUIs.length){
+    body.appendChild(el("div",{class:"card"},[el("div",{class:"small"},["No choices defined for this level in the ruleset."])]));
+  }else{
+    body.appendChild(el("div",{class:"col"}, choiceUIs));
+  }
+
+  modal("Level Up", body, [
+    el("button",{class:"btn primary", onclick: async()=>{
+      const picked = {};
+      for(const choice of (plan.choices||[])) picked[choice.id] = results[choice.id]();
+      const updated = applyLevelUp(ch, plan, picked);
+      await saveCharacter(state, updated);
+      await setActiveCharacter(updated.id);
+      toast(`Leveled to ${next}`);
+      location.reload();
+    }},["Apply"])
+  ]);
+}
+
+function renderApp(state){
+  const r = route();
+  const root = qs("#app");
+  root.innerHTML = "";
+  root.appendChild(topBar(state));
+
+  if(r.path === "/sheet"){
+    const id = r.params.get("id") || state.activeCharId;
+    const rec = state.chars.find(c=>c.id===id);
+    const ch = rec ? rec.data : state.ch;
+    root.appendChild(sheetView(state, ch));
+  }else{
+    root.appendChild(homeView(state));
+  }
+}
+
+async function main(){
+  const state = await loadAppState();
+  start(()=>renderApp(state));
+}
+
+main();

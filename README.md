@@ -1,17 +1,12 @@
-# CharacterSheet Engine (Static + IndexedDB)
+# CharacterSheet (Rebuild 2)
 
-Static GitHub Pages app. No servers. Per-device storage via IndexedDB.
-
-## Features
-- Ruleset import (JSON) stored locally
-- Character create/edit (name, class, level, abilities, HP, AC, speed, portrait)
-- HP damage/heal controls + temp HP clear
-- Inventory add/remove (qty + notes)
-- Basic derived stats (PB, ability mods, spell DC/attack)
-- Level-up planner applies grants/choices from ruleset progression
+Static GitHub Pages character sheet app.
+- No build tools
+- ES modules
+- IndexedDB per device
 
 ## Deploy
-Commit this repo to GitHub and enable Pages on `main` / root.
+Copy these files into your repo root and push to `main`. GitHub Pages should be set to **main / root**.
 
 ## Notes
-This is deliberately generic. You control rulesets locally to avoid hosting copyrighted data.
+If you import a ruleset JSON, it stays local to the device (IndexedDB). Same for characters.
