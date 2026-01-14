@@ -1,36 +1,17 @@
-# CharSheet Engine (GitHub Pages + IndexedDB)
+# CharacterSheet Engine (Static + IndexedDB)
 
-This is a **generic character sheet engine** designed to be hosted on **GitHub Pages** and store data **per device** using **IndexedDB**.
+Static GitHub Pages app. No servers. Per-device storage via IndexedDB.
 
-## Why this exists
-- No backend. No accounts. No syncing.
-- You can load a **custom ruleset JSON from your device** so the public repo doesn't contain copyrighted game content.
-- It looks like an intentional app (not a sad form).
+## Features
+- Ruleset import (JSON) stored locally
+- Character create/edit (name, class, level, abilities, HP, AC, speed, portrait)
+- HP damage/heal controls + temp HP clear
+- Inventory add/remove (qty + notes)
+- Basic derived stats (PB, ability mods, spell DC/attack)
+- Level-up planner applies grants/choices from ruleset progression
 
-## What’s included
-- Polished UI shell (sidebar + mobile topbar)
-- Character list / create / edit / delete
-- Portrait upload (stored as Blob in IndexedDB)
-- Ruleset import / export / switch
-- Level up flow driven by `ruleset.classes[classId].progression[level]`
-- Export/import character JSON
-
-## Deploy to GitHub Pages
-1. Create a new GitHub repo.
-2. Upload the contents of this folder (keep the structure).
-3. In GitHub: **Settings → Pages**
-   - Source: `Deploy from a branch`
-   - Branch: `main` / root
-4. Visit your Pages URL.
-
-## Using your own ruleset
-Go to **Rulesets → Import Ruleset** and load your JSON file.
-The ruleset is stored locally (IndexedDB) on that device/browser.
-
-## Backups
-- **Export character** to download JSON.
-- **Export ruleset** to download JSON.
+## Deploy
+Commit this repo to GitHub and enable Pages on `main` / root.
 
 ## Notes
-- If you clear site data, you wipe IndexedDB.
-- Private browsing may not persist reliably.
+This is deliberately generic. You control rulesets locally to avoid hosting copyrighted data.
