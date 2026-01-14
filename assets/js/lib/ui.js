@@ -1,55 +1,31 @@
-const ABILS = ["STR","DEX","CON","INT","WIS","CHA"];
-
-// 5e skill map (you can extend this later or load from ruleset)
-const SKILLS = [
-  ["Acrobatics", "acrobatics", "DEX"],
-  ["Animal Handling", "animal_handling", "WIS"],
-  ["Arcana", "arcana", "INT"],
-  ["Athletics", "athletics", "STR"],
-  ["Deception", "deception", "CHA"],
-  ["History", "history", "INT"],
-  ["Insight", "insight", "WIS"],
-  ["Intimidation", "intimidation", "CHA"],
-  ["Investigation", "investigation", "INT"],
-  ["Medicine", "medicine", "WIS"],
-  ["Nature", "nature", "INT"],
-  ["Perception", "perception", "WIS"],
-  ["Performance", "performance", "CHA"],
-  ["Persuasion", "persuasion", "CHA"],
-  ["Religion", "religion", "INT"],
-  ["Sleight of Hand", "sleight_of_hand", "DEX"],
-  ["Stealth", "stealth", "DEX"],
-  ["Survival", "survival", "WIS"],
-];
-
-export class UI{
-  constructor({ db, engine, onStatus }){
+export class UI {
+  constructor({ db, engine, onStatus }) {
     this.db = db;
     this.engine = engine;
-    this.onStatus = onStatus || (()=>{});
+    this.onStatus = onStatus || (() => {});
     this.app = document.getElementById("app");
-    this._portraitUrl = null; // objectURL
     this._autosaveTimer = null;
+    this._portraitUrl = null;
   }
 
-  async render(route){
-    if(route.path === "/" || route.path === "") return this.renderHome();
-    if(route.path === "/sheet"){
+  async render(route) {
+    if (route.path === "/" || route.path === "") return this.renderHome();
+    if (route.path === "/sheet") {
       const id = route.query.id;
-      if(!id) return this.renderHome("Missing character id.");
+      if (!id) return this.renderHome("Missing character id.");
       return this.renderSheet(id);
     }
-    this.app.innerHTML = `<div class="card error"><h2>Not found</h2><p class="muted">Route <code>${esc(route.path)}</code> doesn’t exist.</p></div>`;
+    this.app.innerHTML = `<div class="card error"><h2>Not found</h2></div>`;
   }
 
-  async makeBackupBlob(){
+  async makeBackupBlob() {
     const rulesets = await this.db.listRulesets();
     const characters = await this.db.listCharacters();
     const data = { exportedAt: new Date().toISOString(), rulesets, characters };
-    return new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+    return new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   }
 
-  async renderHome(msg=null){
+  async renderHome(msg = null) {
     const chars = await this.db.listCharacters();
     const rulesets = await this.db.listRulesets();
 
@@ -81,7 +57,7 @@ export class UI{
             <h2>Rulesets</h2>
             <button id="btnImportRules" class="btn" type="button">Import JSON</button>
           </div>
-          <p class="muted">Rulesets drive level-up prompts.</p>
+          <p class="muted">If your ruleset uses <code>meta.name</code>, we now read it. Because we’re not animals.</p>
           <div class="hr"></div>
           <div id="rulesetList" class="list"></div>
         </div>
@@ -93,30 +69,44 @@ export class UI{
       const sort = byId("sort").value;
 
       let list = chars.slice();
-      if(q) list = list.filter(c => String(c.name||"").toLowerCase().includes(q));
+      if (q) list = list.filter(c => String(c.name || "").toLowerCase().includes(q));
 
-      if(sort === "name") list.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
-      else if(sort === "level") list.sort((a,b)=>(b.level||1)-(a.level||1));
+      if (sort === "name") list.sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+      else if (sort === "level") list.sort((a,b)=>(b.level||1)-(a.level||1));
       else list.sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
 
-      byId("charList").innerHTML = list.length ? list.map(c => this._charRow(c)).join("") :
-        `<div class="muted">No characters yet. Make one.</div>`;
+      byId("charList").innerHTML = list.length ? list.map(c => `
+        <div class="item">
+          <div>
+            <div class="item-title">${esc(c.name||"Unnamed")}</div>
+            <div class="item-meta">Level ${esc(String(c.level||1))} • ${c.classId ? esc(c.classId) : "no class"} • ${c.rulesetId ? "ruleset " + esc(c.rulesetId) : "no ruleset"}</div>
+          </div>
+          <div class="row" style="justify-content:flex-end">
+            <button class="btn" data-open="${esc(c.id)}" type="button">Open</button>
+            <button class="btn danger" data-del="${esc(c.id)}" type="button">Delete</button>
+          </div>
+        </div>
+      `).join("") : `<div class="muted">No characters yet.</div>`;
 
-      this.app.querySelectorAll("[data-open]").forEach(b => b.addEventListener("click", () => location.hash = `#/sheet?id=${encodeURIComponent(b.dataset.open)}`));
-      this.app.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", async () => {
-        const id = b.dataset.del;
-        if(!confirm("Delete this character? No undo.")) return;
-        await this.db.deleteCharacter(id);
-        await this.renderHome("Character deleted.");
-      }));
+      this.app.querySelectorAll("[data-open]").forEach(b =>
+        b.addEventListener("click", () => location.hash = `#/sheet?id=${encodeURIComponent(b.dataset.open)}`)
+      );
+      this.app.querySelectorAll("[data-del]").forEach(b =>
+        b.addEventListener("click", async () => {
+          const id = b.dataset.del;
+          if (!confirm("Delete this character? No undo.")) return;
+          await this.db.deleteCharacter(id);
+          await this.renderHome("Character deleted.");
+        })
+      );
     };
 
     const renderRules = () => {
       byId("rulesetList").innerHTML = rulesets.length ? rulesets.map(r => `
         <div class="item">
           <div>
-            <div class="item-title">${esc(r.name||"Unnamed Ruleset")}</div>
-            <div class="item-meta">id <code>${esc(r.id)}</code> • v${esc(String(r.version||""))}</div>
+            <div class="item-title">${esc(r.name || "Unnamed Ruleset")}</div>
+            <div class="item-meta">id <code>${esc(r.id)}</code> • v${esc(String(r.version || ""))}</div>
           </div>
           <div class="row" style="justify-content:flex-end">
             <button class="btn danger" data-del-rules="${esc(r.id)}" type="button">Delete</button>
@@ -124,11 +114,13 @@ export class UI{
         </div>
       `).join("") : `<div class="muted">No rulesets imported.</div>`;
 
-      this.app.querySelectorAll("[data-del-rules]").forEach(b => b.addEventListener("click", async () => {
-        if(!confirm("Delete ruleset?")) return;
-        await this.db.deleteRuleset(b.getAttribute("data-del-rules"));
-        await this.renderHome("Ruleset deleted.");
-      }));
+      this.app.querySelectorAll("[data-del-rules]").forEach(b =>
+        b.addEventListener("click", async () => {
+          if (!confirm("Delete ruleset?")) return;
+          await this.db.deleteRuleset(b.getAttribute("data-del-rules"));
+          await this.renderHome("Ruleset deleted.");
+        })
+      );
     };
 
     renderChars();
@@ -137,48 +129,33 @@ export class UI{
     byId("search").addEventListener("input", renderChars);
     byId("sort").addEventListener("change", renderChars);
 
-    byId("btnNewChar").addEventListener("click", () => this._newCharModal(rulesets));
+    byId("btnNewChar").addEventListener("click", async () => {
+      const c = this.engine.newCharacter();
+      await this.db.putCharacter(c);
+      location.hash = `#/sheet?id=${encodeURIComponent(c.id)}`;
+    });
+
     byId("btnImportRules").addEventListener("click", () => this._importRulesModal());
   }
 
-  _charRow(c){
-    const lvl = c.level ?? 1;
-    const rs = c.rulesetId ? `ruleset ${c.rulesetId}` : "no ruleset";
-    const upd = (c.updatedAt||"").slice(0,19).replace("T"," ");
-    return `
-      <div class="item">
-        <div>
-          <div class="item-title">${esc(c.name||"Unnamed Character")}</div>
-          <div class="item-meta">Level ${esc(String(lvl))} • ${esc(rs)} • updated ${esc(upd)}</div>
-        </div>
-        <div class="row" style="justify-content:flex-end">
-          <button class="btn" data-open="${esc(c.id)}" type="button">Open</button>
-          <button class="btn danger" data-del="${esc(c.id)}" type="button">Delete</button>
-        </div>
-      </div>
-    `;
-  }
-
-  async renderSheet(id){
-    if(this._portraitUrl){ try{ URL.revokeObjectURL(this._portraitUrl); }catch(_){} this._portraitUrl = null; }
+  async renderSheet(id) {
+    if (this._portraitUrl) { try { URL.revokeObjectURL(this._portraitUrl); } catch {} this._portraitUrl = null; }
 
     const raw = await this.db.getCharacter(id);
-    if(!raw) return this.renderHome("Character not found.");
+    if (!raw) return this.renderHome("Character not found.");
     const c = this.engine.validateCharacter(raw);
 
     const rulesets = await this.db.listRulesets();
     const ruleset = c.rulesetId ? await this.db.getRuleset(c.rulesetId) : null;
+    const classes = ruleset ? this.engine.listClasses(ruleset) : [];
 
     let portraitUrl = null;
-    if(c.portrait?.blobId){
+    if (c.portrait?.blobId) {
       const blob = await this.db.getBlob(c.portrait.blobId);
-      if(blob){
-        portraitUrl = URL.createObjectURL(blob);
-        this._portraitUrl = portraitUrl;
-      }
+      if (blob) { portraitUrl = URL.createObjectURL(blob); this._portraitUrl = portraitUrl; }
     }
 
-    const pb = this.engine.proficiencyBonus(c.level);
+    const d = this.engine.derived(c);
 
     this.app.innerHTML = `
       <div class="grid two">
@@ -186,8 +163,8 @@ export class UI{
           <div class="row between">
             <h2>${esc(c.name)}</h2>
             <div class="row">
-              <span class="pill">PB <b>${esc(fmtMod(pb))}</b></span>
-              <span class="pill">id <code>${esc(c.id)}</code></span>
+              <span class="pill">PB <b>${esc(fmtMod(d.pb))}</b></span>
+              <span class="pill">Passive Perception <b>${esc(String(d.passivePerception))}</b></span>
               <button id="btnBack" class="btn ghost" type="button">Back</button>
             </div>
           </div>
@@ -206,11 +183,18 @@ export class UI{
               </select>
             </div>
 
+            <div><label>Class</label></div>
+            <div>
+              <select id="classId" class="input" ${ruleset ? "" : "disabled"}>
+                <option value="">(none)</option>
+                ${classes.map(cl => `<option value="${attr(cl.id)}" ${cl.id===c.classId?"selected":""}>${esc(cl.name)}</option>`).join("")}
+              </select>
+            </div>
+
             <div><label>Level</label></div>
             <div class="row" style="width:100%">
               <input id="level" class="input" type="number" min="1" max="20" value="${attr(String(c.level))}" style="max-width:120px"/>
               <button id="btnLevelUp" class="btn" type="button">Run level-up</button>
-              <span class="small muted">${ruleset ? `Using ${esc(ruleset.name)}` : "No ruleset selected."}</span>
             </div>
 
             <div><label>AC</label></div>
@@ -267,7 +251,7 @@ export class UI{
                   <div class="row" style="margin-top:10px">
                     <button id="btnPortraitClear" class="btn danger" type="button">Remove</button>
                   </div>
-                  <div class="small muted" style="margin-top:6px">Stored as Blob in IndexedDB.</div>
+                  <div class="small muted" style="margin-top:6px">Stored locally in IndexedDB.</div>
                 </div>
               </div>
             </div>
@@ -292,15 +276,24 @@ export class UI{
             <h2>Abilities</h2>
             <span class="pill">mods auto</span>
           </div>
+
           <div class="statgrid" style="margin-top:10px">
-            ${ABILS.map(a => this._abilBox(a, c.abilities[a])).join("")}
+            ${this.engine.ABILS.map(a => this._abilBox(a, c.abilities[a], d.mods[a])).join("")}
           </div>
 
           <div class="hr"></div>
 
           <div class="row between">
+            <h2>Saving Throws</h2>
+            <span class="pill">toggle prof</span>
+          </div>
+          <div id="saveList" class="list" style="margin-top:10px"></div>
+
+          <div class="hr"></div>
+
+          <div class="row between">
             <h2>Skills</h2>
-            <span class="pill">toggle prof/expertise</span>
+            <span class="pill">none / prof / expertise</span>
           </div>
           <div id="skillList" class="list" style="margin-top:10px"></div>
 
@@ -315,9 +308,9 @@ export class UI{
       </div>
     `;
 
-    byId("btnBack").addEventListener("click", ()=> location.hash = "#/");
+    byId("btnBack").addEventListener("click", () => location.hash = "#/");
 
-    // Inventory
+    // ---- render helpers ----
     const renderInv = () => {
       byId("invList").innerHTML = c.inventory.length ? c.inventory.map((it, idx) => `
         <div class="item">
@@ -333,14 +326,12 @@ export class UI{
 
       this.app.querySelectorAll("[data-inv-del]").forEach(b => b.addEventListener("click", async () => {
         const i = Number(b.getAttribute("data-inv-del"));
-        c.inventory.splice(i,1);
+        c.inventory.splice(i, 1);
         await this._autosave(c, id, true);
         renderInv();
       }));
     };
-    renderInv();
 
-    // Features
     const renderFeatures = () => {
       const list = c.features || [];
       byId("featureList").innerHTML = list.length ? list.map(f => `
@@ -351,11 +342,10 @@ export class UI{
             ${f.text ? `<pre style="white-space:pre-wrap;margin:8px 0 0;color:#cfd6ee">${esc(f.text)}</pre>` : ""}
           </div>
           <div class="row" style="justify-content:flex-end">
-            <button class="btn" data-feat-edit="${esc(f.id)}" type="button">Edit</button>
             <button class="btn danger" data-feat-del="${esc(f.id)}" type="button">Delete</button>
           </div>
         </div>
-      `).join("") : `<div class="muted">Nothing here yet. Level-up results will appear here automatically.</div>`;
+      `).join("") : `<div class="muted">Level-up grants/choices will show here.</div>`;
 
       this.app.querySelectorAll("[data-feat-del]").forEach(b => b.addEventListener("click", async () => {
         const fid = b.getAttribute("data-feat-del");
@@ -363,88 +353,104 @@ export class UI{
         await this._autosave(c, id, true);
         renderFeatures();
       }));
-      this.app.querySelectorAll("[data-feat-edit]").forEach(b => b.addEventListener("click", async () => {
-        const fid = b.getAttribute("data-feat-edit");
-        const f = (c.features||[]).find(x => x.id === fid);
-        if(!f) return;
-        const name = prompt("Feature name", f.name || "");
-        if(name == null) return;
-        const lvl = prompt("Level (number)", String(f.level ?? c.level));
-        if(lvl == null) return;
-        const text = prompt("Text (short). For longer edits, we can add a proper editor later.", f.text || "");
-        if(text == null) return;
-        f.name = name || "Feature";
-        f.level = clampInt(lvl, 1, 20);
-        f.text = text || "";
-        await this._autosave(c, id, true);
-        renderFeatures();
-      }));
     };
-    renderFeatures();
 
-    byId("btnAddFeature").addEventListener("click", async () => {
-      const name = prompt("Feature name?", "New Feature");
-      if(!name) return;
-      c.features.push({ id: crypto.randomUUID(), name, level: c.level, text:"", tags:["manual"] });
-      await this._autosave(c, id, true);
-      renderFeatures();
-    });
-
-    // Skills
-    const renderSkills = () => {
-      const pbNow = this.engine.proficiencyBonus(c.level);
-      byId("skillList").innerHTML = SKILLS.map(([label, key, abil]) => {
-        const score = c.abilities?.[abil] ?? 10;
-        const am = this.engine.abilityMod(score);
-        const prof = Number(c.skillProfs?.[key] ?? 0); // 0/1/2
-        const total = am + (prof ? pbNow * prof : 0);
+    const renderSaves = () => {
+      const dd = this.engine.derived(c);
+      byId("saveList").innerHTML = this.engine.SAVES.map(s => {
+        const prof = !!c.saveProfs?.[s.key];
+        const total = dd.saves[s.key];
+        const base = dd.mods[s.key];
         return `
           <div class="item">
             <div>
-              <div class="item-title">${esc(label)} <span class="pill">${esc(abil)}</span></div>
-              <div class="item-meta">mod ${esc(fmtMod(total))} (ability ${esc(fmtMod(am))}${prof ? ` + PB ${esc(fmtMod(pbNow))}×${prof}` : ""})</div>
+              <div class="item-title">${esc(s.name)}</div>
+              <div class="item-meta">total ${esc(fmtMod(total))} (base ${esc(fmtMod(base))}${prof?` + PB ${esc(fmtMod(dd.pb))}`:""})</div>
             </div>
             <div class="row" style="justify-content:flex-end">
-              <select class="input" data-skill="${esc(key)}" style="max-width:180px">
-                <option value="0" ${prof===0?"selected":""}>No prof</option>
-                <option value="1" ${prof===1?"selected":""}>Proficient</option>
-                <option value="2" ${prof===2?"selected":""}>Expertise</option>
+              <button class="btn ${prof ? "good" : ""}" data-save="${esc(s.key)}" type="button">${prof ? "Proficient" : "Not proficient"}</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      this.app.querySelectorAll("[data-save]").forEach(btn => btn.addEventListener("click", async () => {
+        const k = btn.getAttribute("data-save");
+        c.saveProfs ||= {};
+        c.saveProfs[k] = !c.saveProfs[k];
+        await this._autosave(c, id, true);
+        renderSaves();
+      }));
+    };
+
+    const renderSkills = () => {
+      const dd = this.engine.derived(c);
+      byId("skillList").innerHTML = this.engine.SKILLS.map(sk => {
+        const rank = Number(c.skillProfs?.[sk.key] ?? 0);
+        const total = dd.skills[sk.key];
+        const base = dd.mods[sk.abil];
+        const add = rank === 1 ? dd.pb : (rank === 2 ? dd.pb * 2 : 0);
+        return `
+          <div class="item">
+            <div>
+              <div class="item-title">${esc(sk.name)} <span class="pill">${esc(sk.abil.toUpperCase())}</span></div>
+              <div class="item-meta">total ${esc(fmtMod(total))} (base ${esc(fmtMod(base))}${add?` + ${esc(fmtMod(add))}`:""})</div>
+            </div>
+            <div class="row" style="justify-content:flex-end">
+              <select class="input" data-skill="${esc(sk.key)}" style="max-width:190px">
+                <option value="0" ${rank===0?"selected":""}>No prof</option>
+                <option value="1" ${rank===1?"selected":""}>Proficient</option>
+                <option value="2" ${rank===2?"selected":""}>Expertise</option>
               </select>
             </div>
           </div>
         `;
       }).join("");
 
-      this.app.querySelectorAll("[data-skill]").forEach(sel => {
-        sel.addEventListener("change", async () => {
-          const k = sel.getAttribute("data-skill");
-          const v = clampInt(sel.value, 0, 2);
-          c.skillProfs ||= {};
-          c.skillProfs[k] = v;
-          await this._autosave(c, id, true);
-          renderSkills();
-        });
-      });
+      this.app.querySelectorAll("[data-skill]").forEach(sel => sel.addEventListener("change", async () => {
+        const k = sel.getAttribute("data-skill");
+        const v = clampInt(sel.value, 0, 2);
+        c.skillProfs ||= {};
+        c.skillProfs[k] = v;
+        await this._autosave(c, id, true);
+        renderSkills();
+      }));
     };
+
+    renderInv();
+    renderFeatures();
+    renderSaves();
     renderSkills();
 
-    // Autosave core fields
-    const hookAutosave = (idOrEl) => byId(idOrEl).addEventListener("input", async () => {
+    // ---- hooks / autosave ----
+    const hookAutosave = (elId) => byId(elId).addEventListener("input", async () => {
       this._updateCharFromForm(c);
       await this._autosave(c, id);
-      // skills depend on level + abilities, so re-render if those changed
-      if(idOrEl === "level") renderSkills();
+      renderSaves();
+      renderSkills();
     });
-    ["name","ruleset","level","ac","speed","hpCurrent","hpMax","tempHp","notes"].forEach(hookAutosave);
 
-    // Abilities inputs
+    ["name","level","ac","speed","hpCurrent","hpMax","tempHp","notes"].forEach(hookAutosave);
+
+    byId("ruleset").addEventListener("change", async () => {
+      c.rulesetId = byId("ruleset").value || "";
+      c.classId = ""; // force reselect class when ruleset changes
+      await this._autosave(c, id, true);
+      location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
+    });
+
+    byId("classId").addEventListener("change", async () => {
+      c.classId = byId("classId").value || "";
+      await this._autosave(c, id, true);
+    });
+
+    // abilities inputs
     this.app.querySelectorAll("[data-abil]").forEach(inp => {
       inp.addEventListener("input", async () => {
         const k = inp.getAttribute("data-abil");
         c.abilities[k] = clampInt(inp.value, 1, 30);
-        const modEl = this.app.querySelector(`[data-mod="${k}"]`);
-        if(modEl) modEl.textContent = fmtMod(this.engine.abilityMod(c.abilities[k]));
         await this._autosave(c, id, true);
+        renderSaves();
         renderSkills();
       });
     });
@@ -452,34 +458,39 @@ export class UI{
     // HP buttons
     byId("btnHeal").addEventListener("click", async () => {
       const amt = prompt("Heal amount?", "1");
-      if(amt==null) return;
+      if (amt == null) return;
       const a = clampInt(amt, 0, 9999);
       c.hp.current = clampInt(c.hp.current + a, 0, c.hp.max);
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
+
     byId("btnDmg").addEventListener("click", async () => {
       const amt = prompt("Damage amount?", "1");
-      if(amt==null) return;
+      if (amt == null) return;
       const dmg = clampInt(amt, 0, 9999);
+
       const temp = clampInt(c.tempHp||0, 0, 9999);
       const useTemp = Math.min(temp, dmg);
       c.tempHp = temp - useTemp;
+
       const left = dmg - useTemp;
       c.hp.current = clampInt(c.hp.current - left, 0, c.hp.max);
+
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
+
     byId("btnTempClear").addEventListener("click", async () => {
       c.tempHp = 0;
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
 
-    // Inventory
+    // Inventory add
     byId("btnAddItem").addEventListener("click", async () => {
       const name = prompt("Item name?", "Rations");
-      if(!name) return;
+      if (!name) return;
       const qty = prompt("Qty?", "1");
       const note = prompt("Note? (optional)", "");
       c.inventory.push({ name, qty: clampInt(qty, 1, 9999), note: note||"" });
@@ -490,10 +501,8 @@ export class UI{
     // Portrait
     byId("portraitFile").addEventListener("change", async (e) => {
       const f = e.target.files?.[0];
-      if(!f) return;
-      if(c.portrait?.blobId){
-        try{ await this.db.deleteBlob(c.portrait.blobId); }catch(_){}
-      }
+      if (!f) return;
+      if (c.portrait?.blobId) { try { await this.db.deleteBlob(c.portrait.blobId); } catch {} }
       const blobId = await this.db.putBlob(f);
       c.portrait = { blobId, mime: f.type || "image/*" };
       await this._autosave(c, id, true);
@@ -501,74 +510,79 @@ export class UI{
     });
 
     byId("btnPortraitClear").addEventListener("click", async () => {
-      if(c.portrait?.blobId){
-        try{ await this.db.deleteBlob(c.portrait.blobId); }catch(_){}
-      }
+      if (c.portrait?.blobId) { try { await this.db.deleteBlob(c.portrait.blobId); } catch {} }
       c.portrait = null;
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
 
-    // Level-up flow: run for each level you gained
+    // Add feature
+    byId("btnAddFeature").addEventListener("click", async () => {
+      const name = prompt("Feature name?", "New Feature");
+      if (!name) return;
+      c.features.push({ id: crypto.randomUUID(), name, level: c.level, text: "", tags: ["manual"] });
+      await this._autosave(c, id, true);
+      renderFeatures();
+    });
+
+    // Level-up (YOUR RULESET: classes.<classId>.progression[level]) :contentReference[oaicite:5]{index=5}
     byId("btnLevelUp").addEventListener("click", async () => {
-      if(!c.rulesetId){
-        alert("Select a ruleset first.");
-        return;
-      }
+      if (!c.rulesetId) return alert("Select a ruleset first.");
       const rs = await this.db.getRuleset(c.rulesetId);
-      if(!rs){ alert("Ruleset missing. Re-import it."); return; }
+      if (!rs) return alert("Ruleset missing. Re-import it.");
+      if (!c.classId) return alert("Select a class (your ruleset has classes).");
 
       const targetLevel = clampInt(byId("level").value, 1, 20);
       const currentLevel = clampInt(c.level, 1, 20);
 
-      if(targetLevel < currentLevel){
-        alert("Lowering level doesn’t run a wizard. It just makes you sad.");
+      if (targetLevel <= currentLevel) {
         c.level = targetLevel;
         await this._autosave(c, id, true);
-        renderSkills();
+        renderSaves(); renderSkills();
         return;
       }
 
-      for(let lvl = currentLevel + 1; lvl <= targetLevel; lvl++){
-        const choices = this.engine.getLevelChoices(rs, lvl);
-        if(!choices.length){
-          // no prompts for this level, still advance
-          c.level = lvl;
-          continue;
+      for (let lvl = currentLevel; lvl < targetLevel; lvl++) {
+        const next = lvl + 1;
+        const node = this.engine.getProgression(rs, c.classId, next);
+        const choices = Array.isArray(node?.choices) ? node.choices : [];
+
+        const selections = {};
+        for (const ch of choices) {
+          const options = this.engine.getChoiceOptions(rs, c.classId, ch, next);
+          const picked = await this._choiceWizard(ch, options, next);
+          if (picked == null) {
+            alert("Level-up cancelled.");
+            return;
+          }
+          selections[ch.id] = picked;
         }
-        const selections = await this._levelWizard(rs, lvl, choices);
-        if(!selections){
-          alert("Level-up cancelled.");
-          break;
-        }
-        const updated = this.engine.applyLevelSelections(c, lvl, selections);
+
+        const updated = this.engine.applyProgressionNodeToCharacter(c, rs, c.classId, next, selections);
         Object.assign(c, updated);
         await this._autosave(c, id, true);
       }
 
-      // final ensure level matches the input
       c.level = targetLevel;
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
   }
 
-  _abilBox(a, score){
-    const mod = fmtMod(this.engine.abilityMod(score));
+  _abilBox(key, score, mod) {
     return `
       <div class="stat">
-        <div class="k">${esc(a)}</div>
+        <div class="k">${esc(key.toUpperCase())}</div>
         <div class="v">
-          <input class="input" data-abil="${esc(a)}" type="number" min="1" max="30" value="${attr(String(score))}" style="max-width:110px"/>
-          <div class="mod" data-mod="${esc(a)}">${esc(mod)}</div>
+          <input class="input" data-abil="${esc(key)}" type="number" min="1" max="30" value="${attr(String(score))}" style="max-width:110px"/>
+          <div class="mod">${esc(fmtMod(mod))}</div>
         </div>
       </div>
     `;
   }
 
-  _updateCharFromForm(c){
+  _updateCharFromForm(c) {
     c.name = byId("name").value || c.name;
-    c.rulesetId = byId("ruleset").value || null;
     c.level = clampInt(byId("level").value, 1, 20);
     c.ac = clampInt(byId("ac").value, 0, 60);
     c.speed = clampInt(byId("speed").value, 0, 300);
@@ -579,9 +593,9 @@ export class UI{
     c.updatedAt = new Date().toISOString();
   }
 
-  async _autosave(c, id, immediate=false){
+  async _autosave(c, id, immediate=false) {
     this._updateCharFromForm(c);
-    if(this._autosaveTimer) clearTimeout(this._autosaveTimer);
+    if (this._autosaveTimer) clearTimeout(this._autosaveTimer);
 
     const doSave = async () => {
       this.onStatus("Saving…");
@@ -589,55 +603,16 @@ export class UI{
       this.onStatus("Saved.");
     };
 
-    if(immediate) return doSave();
+    if (immediate) return doSave();
 
-    return new Promise((resolve,reject) => {
+    return new Promise((resolve, reject) => {
       this._autosaveTimer = setTimeout(() => {
         doSave().then(resolve).catch(reject);
       }, 250);
     });
   }
 
-  async _newCharModal(rulesets){
-    const m = modal(`
-      <h2>New character</h2>
-      <div class="hr"></div>
-      <div class="kv">
-        <div><label>Name</label></div>
-        <div><input id="m_name" class="input" value="New Character"/></div>
-
-        <div><label>Ruleset</label></div>
-        <div>
-          <select id="m_ruleset" class="input">
-            <option value="">(none)</option>
-            ${rulesets.map(r=>`<option value="${attr(r.id)}">${esc(r.name||r.id)}</option>`).join("")}
-          </select>
-        </div>
-
-        <div><label>Level</label></div>
-        <div><input id="m_level" class="input" type="number" min="1" max="20" value="1"/></div>
-      </div>
-      <div class="hr"></div>
-      <div class="row" style="justify-content:flex-end">
-        <button id="m_cancel" class="btn ghost" type="button">Cancel</button>
-        <button id="m_create" class="btn primary" type="button">Create</button>
-      </div>
-    `);
-
-    m.q("#m_cancel").addEventListener("click", ()=> m.close());
-    m.q("#m_create").addEventListener("click", async () => {
-      const name = m.q("#m_name").value || "Unnamed Character";
-      const rulesetId = m.q("#m_ruleset").value || null;
-      const level = clampInt(m.q("#m_level").value, 1, 20);
-
-      const c = this.engine.validateCharacter({ name, rulesetId, level });
-      await this.db.putCharacter(c);
-      m.close();
-      location.hash = `#/sheet?id=${encodeURIComponent(c.id)}`;
-    });
-  }
-
-  async _importRulesModal(){
+  async _importRulesModal() {
     const m = modal(`
       <h2>Import ruleset</h2>
       <p class="muted">Paste JSON or upload a file. Stored only on this device.</p>
@@ -646,7 +621,7 @@ export class UI{
       <input id="r_file" class="input" type="file" accept="application/json,.json"/>
       <div class="hr"></div>
       <label>Or paste JSON</label>
-      <textarea id="r_text" class="input" placeholder='{"id":"homebrew","name":"Homebrew","pools":{},"progression":{"2":{"choices":[...]}}}'></textarea>
+      <textarea id="r_text" class="input" placeholder='{"meta":{"id":"...","name":"...","version":"..."},"classes":{...}}'></textarea>
       <div class="hr"></div>
       <div class="row" style="justify-content:flex-end">
         <button id="r_cancel" class="btn ghost" type="button">Cancel</button>
@@ -656,145 +631,66 @@ export class UI{
 
     m.q("#r_file").addEventListener("change", async (e) => {
       const f = e.target.files?.[0];
-      if(!f) return;
+      if (!f) return;
       m.q("#r_text").value = await f.text();
     });
 
-    m.q("#r_cancel").addEventListener("click", ()=> m.close());
+    m.q("#r_cancel").addEventListener("click", () => m.close());
     m.q("#r_import").addEventListener("click", async () => {
-      try{
+      try {
         const text = m.q("#r_text").value.trim();
-        if(!text) throw new Error("No JSON provided.");
+        if (!text) throw new Error("No JSON provided.");
         await this.engine.importRulesetFromJsonText(text);
         m.close();
         await this.renderHome("Ruleset imported.");
-      }catch(e){
+      } catch (e) {
         alert(e.message || String(e));
       }
     });
   }
 
-  async _levelWizard(ruleset, level, choices){
-    const blocks = choices.map((ch, idx) => {
-      const key = ch.key || `choice_${idx}`;
-      const label = ch.label || key;
-      const type = ch.type || "pickOne";
-      const opts = Array.isArray(ch.options) ? ch.options : (ch.pool ? this.engine.resolvePool(ruleset, ch.pool) : []);
-      const optionHtml = opts.map(o => {
-        const v = typeof o === "string" ? o : (o?.id || o?.name || JSON.stringify(o));
-        const t = typeof o === "string" ? o : (o?.name || o?.label || o?.id || v);
-        return `<option value="${attr(v)}">${esc(t)}</option>`;
-      }).join("");
+  async _choiceWizard(choice, options, level) {
+    const count = clampInt(choice?.count ?? 1, 1, 99);
+    const title = choice?.title || choice?.id || "Choice";
+    const help = choice?.help || "";
 
-      if(type === "pickMany"){
-        return `
-          <div class="card" style="background:rgba(255,255,255,.02)">
-            <div class="row between">
-              <div>
-                <div style="font-weight:900">${esc(label)}</div>
-                <div class="small muted">key <code>${esc(key)}</code> • pick many</div>
-              </div>
-              <span class="pill">min ${esc(String(ch.min??0))} max ${esc(String(ch.max??999))}</span>
-            </div>
-            <div class="hr"></div>
-            <select class="input" data-choice="${attr(key)}" multiple size="6">
-              ${optionHtml}
-            </select>
-          </div>
-        `;
-      }
-
-      if(type === "number"){
-        return `
-          <div class="card" style="background:rgba(255,255,255,.02)">
-            <div style="font-weight:900">${esc(label)}</div>
-            <div class="small muted">key <code>${esc(key)}</code> • number</div>
-            <div class="hr"></div>
-            <input class="input" data-choice="${attr(key)}" type="number" value="${attr(String(ch.default??0))}"/>
-          </div>
-        `;
-      }
-
-      if(type === "text"){
-        return `
-          <div class="card" style="background:rgba(255,255,255,.02)">
-            <div style="font-weight:900">${esc(label)}</div>
-            <div class="small muted">key <code>${esc(key)}</code> • text</div>
-            <div class="hr"></div>
-            <input class="input" data-choice="${attr(key)}" type="text" value="${attr(String(ch.default??""))}"/>
-          </div>
-        `;
-      }
-
-      return `
-        <div class="card" style="background:rgba(255,255,255,.02)">
-          <div style="font-weight:900">${esc(label)}</div>
-          <div class="small muted">key <code>${esc(key)}</code> • pick one</div>
-          <div class="hr"></div>
-          <select class="input" data-choice="${attr(key)}">
-            <option value="">(choose)</option>
-            ${optionHtml}
-          </select>
-        </div>
-      `;
-    }).join("");
+    const optsHtml = options.map(o => `<option value="${attr(o.id)}">${esc(o.name || o.id)}</option>`).join("");
 
     const m = modal(`
-      <h2>Level ${esc(String(level))} wizard</h2>
-      <p class="muted">${esc(ruleset.name||"Ruleset")} • complete required choices</p>
+      <h2>Level ${esc(String(level))}: ${esc(title)}</h2>
+      ${help ? `<p class="muted">${esc(help)}</p>` : `<p class="muted">Pick ${esc(String(count))}.</p>`}
       <div class="hr"></div>
-      <div class="grid" style="gap:12px">${blocks}</div>
+      <select id="c_sel" class="input" multiple size="10">
+        ${optsHtml}
+      </select>
       <div class="hr"></div>
       <div class="row" style="justify-content:flex-end">
-        <button id="lu_cancel" class="btn ghost" type="button">Cancel</button>
-        <button id="lu_apply" class="btn primary" type="button">Apply</button>
+        <button id="c_cancel" class="btn ghost" type="button">Cancel</button>
+        <button id="c_ok" class="btn primary" type="button">Apply</button>
       </div>
     `);
 
     return await new Promise((resolve) => {
-      m.q("#lu_cancel").addEventListener("click", ()=> { m.close(); resolve(null); });
-
-      m.q("#lu_apply").addEventListener("click", ()=> {
-        const selections = {};
-        const missing = [];
-
-        choices.forEach((ch, idx) => {
-          const key = ch.key || `choice_${idx}`;
-          const type = ch.type || "pickOne";
-          const el = m.el.querySelector(`[data-choice="${cssAttr(key)}"]`);
-          if(!el) return;
-
-          if(type === "pickMany"){
-            const picked = Array.from(el.selectedOptions).map(o=>o.value).filter(Boolean);
-            const min = Number(ch.min ?? 0);
-            const max = Number(ch.max ?? 9999);
-            if(picked.length < min || picked.length > max) missing.push(`${key} (${picked.length} picked)`);
-            selections[key] = picked;
-            return;
-          }
-
-          const v = String(el.value || "").trim();
-          if((type === "pickOne") && !v) missing.push(key);
-          selections[key] = v;
-        });
-
-        if(missing.length){
-          alert("Missing/invalid selections: " + missing.join(", "));
+      m.q("#c_cancel").addEventListener("click", () => { m.close(); resolve(null); });
+      m.q("#c_ok").addEventListener("click", () => {
+        const picked = Array.from(m.q("#c_sel").selectedOptions).map(o => o.value).filter(Boolean);
+        if (picked.length !== count) {
+          alert(`Pick exactly ${count}. You picked ${picked.length}.`);
           return;
         }
         m.close();
-        resolve(selections);
+        resolve(picked);
       });
     });
   }
 }
 
+// helpers
 function byId(id){ return document.getElementById(id); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;" }[c])); }
 function attr(s){ return esc(s).replace(/"/g,"&quot;"); }
 function clampInt(v,min,max){ const n = Number.parseInt(String(v),10); if(!Number.isFinite(n)) return min; return Math.max(min, Math.min(max,n)); }
-function fmtMod(n){ return (Number(n)>=0?`+${n}`:`${n}`); }
-function cssAttr(s){ return String(s).replace(/"/g,'\\"'); }
+function fmtMod(n){ const x = Number(n)||0; return x>=0 ? `+${x}` : `${x}`; }
 
 function modal(inner){
   const wrap = document.createElement("div");
