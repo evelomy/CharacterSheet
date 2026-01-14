@@ -1,83 +1,75 @@
-import { getProgressionEntry, scalarAt, spellSlotsAt, profBonus, filterOptions } from "./ruleset.js";
+export function profBonus(level){
+  if(level>=17) return 6;
+  if(level>=13) return 5;
+  if(level>=9) return 4;
+  if(level>=5) return 3;
+  return 2;
+}
+export function abilityMod(score){ return Math.floor((score-10)/2); }
 
-export function deriveCharacter(rs, ch){
-  if(!rs || !ch) return { derived:{} };
-  const c = rs.classes?.[ch.classId];
-  const level = ch.level ?? 1;
+export function scalarAt(map, level, def=0){
+  if(!map) return def;
+  const keys = Object.keys(map).map(k=>parseInt(k,10)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  let v=def;
+  for(const k of keys){ if(level>=k) v=map[String(k)]; }
+  return v;
+}
 
-  const derived = {};
-  derived.proficiencyBonus = profBonus(level);
-
-  // scalars (optional)
-  const scalars = c?.scalars || {};
-  derived.scalars = {};
-  for(const [k,map] of Object.entries(scalars)){
-    derived.scalars[k] = scalarAt(map, level, 0);
+export function filterOptions(pool, filter={}, ctx={}){
+  let out = pool.slice();
+  if(filter.minLevel!=null){
+    out = out.filter(it=>{
+      const ml = it?.requires?.minLevel ?? it?.minLevel ?? 0;
+      return (ctx.level ?? 1) >= (ml || 0);
+    });
   }
+  if(filter.class){
+    out = out.filter(it=>{
+      const lists = it.lists || (it.class?[it.class]:[]);
+      return Array.isArray(lists) ? lists.includes(filter.class) : false;
+    });
+  }
+  return out;
+}
 
-  // spell slots (optional)
-  derived.spellSlots = spellSlotsAt(c?.spellSlots, level);
-
-  // prepared spells formula (optional)
-  // rule: prepared = intMod + floor(level/2) etc. You can define in ruleset later.
-
-  return { derived };
+export function poolByKey(rs, key){
+  if(!rs) return [];
+  if(key==="infusions") return rs.infusions || [];
+  if(key==="feats") return rs.feats || [];
+  if(key==="features") return Object.entries(rs.features||{}).map(([id,v])=>({id,...v,_id:id}));
+  if(key.startsWith("spells.")){
+    const lvl = key.split(".")[1];
+    const spells = rs.spells || [];
+    if(lvl==="cantrip") return spells.filter(s=>s.level===0);
+    const n=parseInt(lvl,10);
+    return spells.filter(s=>s.level===n);
+  }
+  return [];
 }
 
 export function buildLevelUpPlan(rs, ch, nextLevel){
-  const entry = getProgressionEntry(rs, ch.classId, nextLevel) || {};
-  const plan = {
+  const cls = rs?.classes?.[ch.classId];
+  const entry = cls?.progression?.[String(nextLevel)] || {};
+  return {
     nextLevel,
     grants: entry.grants || [],
     choices: entry.choices || [],
     notes: entry.notes || null
   };
-  return plan;
 }
 
-export function poolByKey(rs, key){
-  // "infusions" or "spells.cantrip" etc.
-  if(key === "infusions") return rs.infusions || [];
-  if(key.startsWith("spells.")){
-    const lvl = key.split(".")[1];
-    const spells = rs.spells || [];
-    if(lvl === "cantrip") return spells.filter(s=>s.level === 0);
-    const n = parseInt(lvl,10);
-    return spells.filter(s=>s.level === n);
-  }
-  if(key === "features") return Object.entries(rs.features||{}).map(([id,v])=>({id, ...v, _id:id}));
-  if(key === "feats") return rs.feats || [];
-  return [];
-}
-
-export function applyLevelUp(rs, ch, plan, choiceResults){
-  // choiceResults: { choiceId: [selectedIds...] } or similar
+export function applyLevelUp(ch, plan, choiceResults){
   const out = structuredClone(ch);
   out.level = plan.nextLevel;
-
   out.features = out.features || [];
-  for(const f of (plan.grants||[])){
-    if(!out.features.includes(f)) out.features.push(f);
-  }
-
+  for(const f of (plan.grants||[])) if(!out.features.includes(f)) out.features.push(f);
   out.choices = out.choices || {};
   out.choicesByLevel = out.choicesByLevel || {};
   out.choicesByLevel[String(plan.nextLevel)] = { plan, choiceResults, at: Date.now() };
-
-  // Store selected options in named buckets (simple default)
   for(const choice of (plan.choices||[])){
-    const picked = choiceResults[choice.id] || [];
-    if(!out.choices[choice.id]) out.choices[choice.id] = [];
-    // overwrite for that level-up choice
+    const picked = choiceResults?.[choice.id] || [];
     out.choices[choice.id] = picked;
   }
-
   out.updatedAt = Date.now();
   return out;
-}
-
-export function listOptionsForChoice(rs, ch, choice){
-  const pool = poolByKey(rs, choice.from);
-  const ctx = { level: ch.level ?? 1, classId: ch.classId, subclassId: ch.subclassId };
-  return filterOptions(pool, choice.filter || {}, ctx);
 }
