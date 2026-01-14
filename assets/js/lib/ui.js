@@ -530,6 +530,14 @@ $("#ruleset").addEventListener("change", async () => {
       if(amt==null) return;
       const a = clampInt(amt, 0, 9999);
       c.hp.current = clampInt(c.hp.current + a, 0, c.hp.max);
+      // Sync form fields so _autosave() doesn't overwrite HP/temp changes
+      const hpCurEl = this.app.querySelector("#hpCurrent");
+      const hpMaxEl = this.app.querySelector("#hpMax");
+      const tempEl  = this.app.querySelector("#tempHp");
+      if (hpCurEl) hpCurEl.value = String(c.hp.current);
+      if (hpMaxEl) hpMaxEl.value = String(c.hp.max);
+      if (tempEl)  tempEl.value  = String(c.tempHp || 0);
+
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
@@ -543,12 +551,28 @@ $("#ruleset").addEventListener("change", async () => {
       c.tempHp = temp - useTemp;
       const left = dmg - useTemp;
       c.hp.current = clampInt(c.hp.current - left, 0, c.hp.max);
+      // Sync form fields so _autosave() doesn't overwrite HP/temp changes
+      const hpCurEl = this.app.querySelector("#hpCurrent");
+      const hpMaxEl = this.app.querySelector("#hpMax");
+      const tempEl  = this.app.querySelector("#tempHp");
+      if (hpCurEl) hpCurEl.value = String(c.hp.current);
+      if (hpMaxEl) hpMaxEl.value = String(c.hp.max);
+      if (tempEl)  tempEl.value  = String(c.tempHp || 0);
+
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
 
     $("#btnTempClear").addEventListener("click", async () => {
       c.tempHp = 0;
+      // Sync form fields so _autosave() doesn't overwrite HP/temp changes
+      const hpCurEl = this.app.querySelector("#hpCurrent");
+      const hpMaxEl = this.app.querySelector("#hpMax");
+      const tempEl  = this.app.querySelector("#tempHp");
+      if (hpCurEl) hpCurEl.value = String(c.hp.current);
+      if (hpMaxEl) hpMaxEl.value = String(c.hp.max);
+      if (tempEl)  tempEl.value  = String(c.tempHp || 0);
+
       await this._autosave(c, id, true);
       location.hash = `#/sheet?id=${encodeURIComponent(id)}`;
     });
