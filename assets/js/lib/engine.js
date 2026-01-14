@@ -238,9 +238,8 @@ export class Engine {
     const levelKey = String(level);
     out.advancement[levelKey] ||= {};
 
-    // If already applied, do nothing (prevents the "level 2 repeated" issue)
-    const alreadyApplied = Object.keys(out.advancement[levelKey]).length > 0;
-    if (alreadyApplied) {
+    // If already applied, do nothing (prevents repeats)
+    if (out.advancement[levelKey]._applied) {
       out.updatedAt = new Date().toISOString();
       return out;
     }
@@ -306,6 +305,8 @@ export class Engine {
         tags: ["choice"],
       });
     }
+
+    out.advancement[levelKey]._applied = true;
 
     out.updatedAt = new Date().toISOString();
     return out;
