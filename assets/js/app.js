@@ -133,17 +133,9 @@ function makeNewCharacter({name, classId, level=1}){
   };
 }
 
-async function saveCharacter(ch, { setActive = false } = {}){
-  ch = normalizeCharacter(ch);
-  const rec = {
-    id: ch.id,
-    name: ch.name || "Character",
-    data: ch,
-    updatedAt: Date.now(),
-    createdAt: ch.createdAt || Date.now(),
-    rulesetId: state.rulesetId
-  };
-  await idb.put("characters", rec);
+async function saveCharacter(normalizeCharacter(ch, {setActive=false}={})){
+  const rec = { id: ch.id, name: ch.name, data: ch, updatedAt: Date.now(), createdAt: ch.createdAt||Date.now(), rulesetId: state.rulesetId };
+  await idb.put("characters", normalizeCharacter());
   if(setActive){
     await setActiveCharacter(ch.id);
     state.characterId = ch.id;
@@ -192,7 +184,7 @@ async function Home(){
     el("div", {class:"grid cols2"}, [
       el("div", {}, [
         el("div", {class:"small"}, "Active character"),
-        el("div", {style:"font-size:22px;font-weight:900;margin-top:6px"}, ch?.name || "null"),
+        el("div", {style:"font-size:22px;font-weight:900;margin-top:6px"}, ch?.name || "None"),
         el("div", {class:"small", style:"margin-top:6px"}, `${labelForClass(rs, ch?.classId)} • Level ${ch?.level || "-"}`),
         el("div", {class:"small", style:"margin-top:10px"}, `Proficiency Bonus: +${derived?.proficiencyBonus ?? "?"}`),
         el("div", {class:"small"}, `Ruleset: ${rs?.meta?.name || "none"}`),
@@ -415,7 +407,6 @@ async function Sheet(){
   const {derived} = deriveCharacter(rs, ch);
 
   const header = el("div", {class:"card"}, []);
-  const avatar = el("div", {class:"avatar", style:"width:76px;height:76px;border-radius:22px"}, [initialsNode(ch.name)]);
   loadPortrait(ch.id).then(url=>{
     if(url){ avatar.innerHTML=""; avatar.appendChild(el("img", {src:url, alt:"portrait"})); }
   });
@@ -502,8 +493,8 @@ async function LevelUp(){
       el("span", {class:"badge"}, labelForClass(rs, ch.classId))
     ]),
     plan.notes ? el("div", {class:"small", style:"margin-top:8px"}, plan.notes) : null,
-    el("div", {class:"small", style:"margin-top:10px"}, `Grants: ${plan.grants.length ? plan.grants.join(", ") : "null"}`),
-    el("div", {class:"small"}, `Choices: ${plan.choices.length ? plan.choices.length : "null"}`),
+    el("div", {class:"small", style:"margin-top:10px"}, `Grants: ${plan.grants.length ? plan.grants.join(", ") : "None"}`),
+    el("div", {class:"small"}, `Choices: ${plan.choices.length ? plan.choices.length : "None"}`),
   ]);
   cont.appendChild(intro);
 
@@ -607,7 +598,7 @@ function renderChoice(choice, options, choiceState){
 function previewPlan(plan, choiceState){
   const lines = [];
   lines.push(`Next Level: ${plan.nextLevel}`);
-  lines.push(`Grants: ${plan.grants.length ? plan.grants.join(", ") : "null"}`);
+  lines.push(`Grants: ${plan.grants.length ? plan.grants.join(", ") : "None"}`);
   for(const c of plan.choices){
     const picked = choiceState[c.id] || [];
     lines.push(`${c.title || c.id}: ${picked.length ? picked.join(", ") : "(none)"}`);
@@ -827,5 +818,3 @@ setRouteCallback(async (path)=>{
 
 await init();
 start();
-
-/* deploy-poke 2026-01-14T19:48:01Z */
