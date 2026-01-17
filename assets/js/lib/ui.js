@@ -611,14 +611,23 @@ export class UI{
       const meta = spell?.meta || spell?.details || {};
       const sum = String(spell?.summary || "");
       const full = (String(spell?.description || "") + " " + sum).toLowerCase();
-      // If the ruleset gives explicit roll/save info, use it.
-      if(meta.save) return `Save: ${meta.save}`;
-      if(meta.attack) return `Attack: ${meta.attack}`;
 
-      // Heuristics (because we live in a society that stores spells without mechanics)
+      const parts = [];
+
+      // Prefer explicit ruleset mechanics
+      if (meta.save) parts.push(`Save: ${meta.save}`);
+      if (meta.attack) parts.push(`Attack: ${meta.attack}`);
+
+      // Always show damage dice if provided
+      const r = String(spell?.roll || "").trim();
+      if (r && r !== "-" && r.toLowerCase() !== "n/a") parts.push(`Damage: ${r}`);
+
+      if (parts.length) return parts.join(" • ");
+
+      // Heuristics fallback
       const mSave = full.match(/(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+saving\s+throw/);
-      if(mSave) return `Save: ${mSave[1][0].toUpperCase()+mSave[1].slice(1)} save`;
-      if(full.includes("spell attack") || full.includes("attack roll")) return "Spell attack roll";
+      if (mSave) return `Save: ${mSave[1][0].toUpperCase()+mSave[1].slice(1)} save`;
+      if (full.includes("spell attack") || full.includes("attack roll")) return "Spell attack roll";
       return "Roll: (not specified in ruleset)";
     };
 
