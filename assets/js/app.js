@@ -44,7 +44,7 @@ function fatal(err){
 
 async function boot(){
   const badge = document.getElementById("buildBadge");
-  if (badge) badge.textContent = ;
+  if (badge) badge.textContent = "build: " + ((window.BUILD_ID || BUILD_ID || "?"));
   setStatus("Opening IndexedDB…");
   state.db = await DB.open({ onStatus:setStatus });
 
