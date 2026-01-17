@@ -693,7 +693,7 @@ export class UI{
     };
     const renderFeatures = () => {
       const list = c.features || [];
-      $("#featureList").innerHTML = list.length ? list.map(f => `
+      $("#featureList").innerHTML = list.length ? list.map((f,i) => `
         <div class="item">
           <div>
             <div class="item-title">${esc(f.name || "Feature")}</div>
@@ -701,14 +701,17 @@ export class UI{
             ${f.text ? `<pre style="white-space:pre-wrap;margin:8px 0 0;color:#cfd6ee">${esc(f.text)}</pre>` : ""}
           </div>
           <div class="row" style="justify-content:flex-end">
-            <button class="btn danger" data-feat-del="${esc(f.id)}" type="button">Delete</button>
+            <button class="btn danger" data-feat-del="${attr(String(i))}" type="button">Delete</button>
           </div>
         </div>
       `).join("") : `<div class="muted">Level-up grants/choices will appear here.</div>`;
 
       this.app.querySelectorAll("[data-feat-del]").forEach(b => b.addEventListener("click", async () => {
-        const fid = b.getAttribute("data-feat-del");
-        c.features = (c.features||[]).filter(x => x.id !== fid);
+        const idx = Number(b.getAttribute("data-feat-del"));
+        if (!Number.isFinite(idx)) return;
+        c.features ||= [];
+        if (idx < 0 || idx >= c.features.length) return;
+        c.features.splice(idx, 1);
         await this._autosave(c, id, true);
         renderFeatures();
       }));
@@ -910,55 +913,34 @@ $("#ruleset").addEventListener("change", async () => {
 
     // feature add
     $("#btnAddFeature").addEventListener("click", async () => {
-      // Clean, reliable Add Feature (no duplicate 'text', no mystery 'character' var)
-      const cRef =
-        (this?.state?.character) ||
-        (window.UIInstance?.state?.character) ||
-        (window.UIInstance?.character) ||
-        (window.currentChar) ||
-        (window.state?.character) ||
-        c;
-
-      if (!cRef) return alert("No character loaded.");
-
-      const nameRaw = prompt("Feature name?", "New Feature");
+      const nameRaw = prompt("Feature/Feat name?", "New Feature");
       if (nameRaw == null) return;
       const name = String(nameRaw).trim();
       if (!name) return;
 
-      const textRaw = prompt("Feature description / notes? (optional)", "");
+      const textRaw = prompt("Description / notes? (optional)", "");
       if (textRaw == null) return;
-      const text = String(textRaw).trim();
+      const text = String(textRaw);
 
-      if (!Array.isArray(cRef.features)) cRef.features = [];
+      c.features ||= [];
+      // Stable id so deletes work even if names repeat
+      const id2 = `manual_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+      const lvl = Number(c.level || 1);
 
-      cRef.features.push({
+      c.features.push({
+        id: id2,
         name,
         text,
-        level: Number(cRef.level || 1),
-        source: "manual"
+        source: "manual",
+        level: lvl
       });
 
-      // Save via the app's autosave if present, otherwise fall back to saveCharacter if available
-      try {
-        const id =
-          (new URLSearchParams(location.hash.split("?")[1] || "")).get("id") ||
-          (new URLSearchParams(location.search)).get("id") ||
-          cRef.id ||
-          null;
+      await this._autosave(c, id, true);
+      renderFeatures();
+    });
 
-        if (typeof this?._autosave === "function" && id) {
-          await this._autosave(cRef, id, true);
-        } else if (typeof window.saveCharacter === "function") {
-          await window.saveCharacter(cRef);
-        }
-      } catch (_) {}
-
-      try { if (typeof window.renderFeatures === "function") window.renderFeatures(); } catch (_) {}
-
-      // Only re-render the Features list (full UI.render() is fragile here)
-      try { if (typeof window.renderFeatures === "function") window.renderFeatures(); } catch (_) {}
-});// spell add
+      
+    // spell add
     $("#btnAddSpell").addEventListener("click", async () => {
       if(!c.rulesetId) return alert("Select a ruleset first.");
       const rs = await this.db.getRuleset(c.rulesetId);
