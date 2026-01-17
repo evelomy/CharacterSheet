@@ -4,8 +4,8 @@ import { DB } from "./lib/db.js";
 import { Engine } from "./lib/engine.js";
 
 // IMPORTANT: this gets overwritten by the one-liner below
-export const BUILD_ID = "20260117-2222-1b146f3";
-
+const BUILD_ID = "20260117-2222-1b146f3";
+window.BUILD_ID = BUILD_ID;
 const state = { db:null, router:null, ui:null, engine:null };
 
 function setStatus(msg){
@@ -24,7 +24,8 @@ function fatal(err){
     <div class="card error">
       <div class="row between">
         <h2>App crashed</h2>
-export const BUILD_ID = "20260117-2222-1b146f3";
+const BUILD_ID = "20260117-2222-1b146f3";
+window.BUILD_ID = BUILD_ID;
       </div>
       <pre style="white-space:pre-wrap;margin:0;color:#ffd1d1">${esc(String(err?.stack || err))}</pre>
       <div class="hr"></div>
@@ -43,8 +44,8 @@ export const BUILD_ID = "20260117-2222-1b146f3";
 
 async function boot(){
   const badge = document.getElementById("buildBadge");
-export const BUILD_ID = "20260117-2222-1b146f3";
-
+const BUILD_ID = "20260117-2222-1b146f3";
+window.BUILD_ID = BUILD_ID;
   setStatus("Opening IndexedDB…");
   state.db = await DB.open({ onStatus:setStatus });
 
@@ -59,7 +60,8 @@ export const BUILD_ID = "20260117-2222-1b146f3";
       const blob = await state.ui.makeBackupBlob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-export const BUILD_ID = "20260117-2222-1b146f3";
+const BUILD_ID = "20260117-2222-1b146f3";
+window.BUILD_ID = BUILD_ID;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
       setStatus("Backup exported.");
