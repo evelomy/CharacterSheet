@@ -4,7 +4,7 @@ import { DB } from "./lib/db.js";
 import { Engine } from "./lib/engine.js";
 
 // IMPORTANT: this gets overwritten by the one-liner below
-P260117-2222-1b146f3";
+export const BUILD_ID = "20260117-2222-1b146f3";
 
 const state = { db:null, router:null, ui:null, engine:null };
 
@@ -24,7 +24,7 @@ function fatal(err){
     <div class="card error">
       <div class="row between">
         <h2>App crashed</h2>
-        <span class="pill">build <code>${esc(BUILD_ID)}</code></span>
+export const BUILD_ID = "20260117-2222-1b146f3";
       </div>
       <pre style="white-space:pre-wrap;margin:0;color:#ffd1d1">${esc(String(err?.stack || err))}</pre>
       <div class="hr"></div>
@@ -43,7 +43,7 @@ function fatal(err){
 
 async function boot(){
   const badge = document.getElementById("buildBadge");
-  if (badge) badge.textContent = `build: ${BUILD_ID}`;
+export const BUILD_ID = "20260117-2222-1b146f3";
 
   setStatus("Opening IndexedDB…");
   state.db = await DB.open({ onStatus:setStatus });
@@ -59,7 +59,7 @@ async function boot(){
       const blob = await state.ui.makeBackupBlob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `charsheet-backup-${BUILD_ID}.json`;
+export const BUILD_ID = "20260117-2222-1b146f3";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
       setStatus("Backup exported.");
