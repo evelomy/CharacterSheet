@@ -31,7 +31,7 @@ export class UI{
       if(!id) return this.renderHome("Missing character id.");
       return this.renderSheet(id);
     }
-    this._setHTML(`<div class="card error"><h2>Not found</h2><p class="muted">Route <code>${esc(route.path)}</code> doesn’t exist.</p></div>`);
+    this._setHTML(`<div class="card error"><h2>Not found</h2><p class="muted">Route <code>${esc(route?.path || "(unknown)")}</code> doesn’t exist.</p></div>`);
   }
 
   async makeBackupBlob(){
