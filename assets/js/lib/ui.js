@@ -912,8 +912,7 @@ $("#ruleset").addEventListener("change", async () => {
       const matches = all.filter(s => !query || String(s.name||"").toLowerCase().includes(query)).slice(0,30);
       if(!matches.length) return alert("No matches.");
 
-      const menu = matches.map((s,i)=>`${i+1}. ${s.name} (L${s.level})`).join("
-");
+      const menu = matches.map((s,i)=>`${i+1}. ${s.name} (L${s.level})`).join("\n");
       const pick = prompt(`Pick a spell by number:
 
 ${menu}`, "1");
