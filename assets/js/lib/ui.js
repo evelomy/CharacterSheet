@@ -253,6 +253,7 @@ export class UI{
             <div><label>Level</label></div>
             <div class="row" style="width:100%">
               <input id="level" class="input" type="number" min="1" max="20" value="${attr(String(c.level))}" style="max-width:120px"/>
+              <label class="small muted" style="display:inline-flex;align-items:center;gap:6px;margin-left:8px"><input id="forceLevelUp" type="checkbox"/> Force rerun</label>
               <button id="btnLevelUp" class="btn" type="button">Run level-up</button>
             </div>
 
@@ -322,7 +323,13 @@ export class UI{
             <h3>Features & Choices</h3>
             <button id="btnAddFeature" class="btn" type="button">Add</button>
           </div>
+          <div id="inspirationBox" class="list" style="margin-top:10px"></div>
           <div id="spellSlots" class="list" style="margin-top:10px"></div>
+          <div class="row between" style="margin-top:10px">
+            <h3 style="margin:0">Spells</h3>
+            <button id="btnAddSpell" class="btn" type="button">Add spell</button>
+          </div>
+          <div id="spellList" class="list" style="margin-top:10px"></div>
           <div id="featureList" class="list" style="margin-top:10px"></div>
 
           <div class="hr"></div>
@@ -414,23 +421,26 @@ export class UI{
         try{ ruleset = await this.db.getRuleset(c.rulesetId); }catch{}
       }
 
+      // Allow manual override of slot totals + renaming the tracker
+      c.spellSlots ||= { expended: {} };
+      c.spellSlots.expended ||= {};
+      const label = String(c.spellSlots.label || "Spell Slots");
+      const manualSlots = c.spellSlots.manual && typeof c.spellSlots.manual === 'object' ? c.spellSlots.manual.slots : null;
+
       const info = this.engine.getSpellSlots(c, ruleset);
-      const slots = info?.slots || {};
-      const tiers = Object.keys(slots).map(n=>Number(n)).filter(n=>Number.isFinite(n) && slots[n]>0).sort((a,b)=>a-b);
+      const slots = (manualSlots && typeof manualSlots === 'object') ? manualSlots : (info?.slots || {});
+      const usingManual = (manualSlots && typeof manualSlots === 'object');
+      const tiers = Object.keys(slots).map(n=>Number(n)).filter(n=>Number.isFinite(n) && Number(slots[n])>0).sort((a,b)=>a-b);
       if(!tiers.length){
         slotEl.innerHTML = ``;
         return;
       }
 
-      // track expended in character.spellSlots.expended[level] = number
-      c.spellSlots ||= { expended: {} };
-      c.spellSlots.expended ||= {};
-
       slotEl.innerHTML = `
         <div class="item">
           <div>
-            <div class="item-title">Spell Slots</div>
-            <div class="item-meta">${esc(info.casterType)} caster • caster level ${esc(String(info.casterLevel))}</div>
+            <div class="item-title">${esc(label)}</div>
+            <div class="item-meta">${usingManual ? "manual totals" : (esc(info.casterType)+" caster • caster level "+esc(String(info.casterLevel)))}</div>
             <div style="margin-top:8px; display:grid; gap:10px">
               ${tiers.map(lvl => {
                 const total = Number(slots[lvl]||0);
@@ -450,7 +460,9 @@ export class UI{
               }).join("")}
             </div>
           </div>
-          <div class="row" style="justify-content:flex-end">
+          <div class="row" style="justify-content:flex-end;gap:8px">
+            <button class="btn" id="btnSlotsEdit" type="button">Edit</button>
+            <button class="btn" id="btnSlotsMode" type="button">${usingManual?"Use auto":"Use manual"}</button>
             <button class="btn" id="btnSlotsReset" type="button">Long rest reset</button>
           </div>
         </div>
@@ -483,8 +495,183 @@ export class UI{
         await this._autosave(c, id, true);
         renderSpellSlots();
       });
+
+      const editBtn = slotEl.querySelector("#btnSlotsEdit");
+      if(editBtn) editBtn.addEventListener("click", async () => {
+        const newLabel = prompt("Rename this tracker (optional)", label);
+        if(newLabel != null) c.spellSlots.label = String(newLabel).trim() || "Spell Slots";
+
+        const cur = tiers.map(l=>`${l}=${Number(slots[l]||0)}`).join(", ");
+        const s = prompt(
+          "Manual slot totals. Leave blank to keep current.\nFormat: 1=4,2=3,3=2",
+          usingManual ? cur : ""
+        );
+        if(s == null) return;
+        const t = String(s).trim();
+        if(t){
+          const out = {};
+          for (const part of t.split(/[,;\n]/)){
+            const m = String(part).trim().match(/^(\d+)\s*[=:]\s*(\d+)$/);
+            if(!m) continue;
+            const lvl = clampInt(m[1], 0, 99);
+            const tot = clampInt(m[2], 0, 99);
+            if(lvl>=1 && lvl<=9 && tot>=0 && tot<=20) out[String(lvl)] = tot;
+          }
+          c.spellSlots.manual ||= {};
+          c.spellSlots.manual.slots = out;
+        }
+
+        // Optional: manual edit of expended slots (helps when you fat-finger checkboxes).
+        // Format: 1=1,2=0,3=2 (meaning: 1st level expended 1, 2nd expended 0, etc.)
+        const expCur = tiers.map(l=>`${l}=${clampInt(c.spellSlots.expended[String(l)] ?? 0, 0, Number(slots[l]||0))}`).join(", ");
+        const expS = prompt(
+          "Edit expended counts (optional). Leave blank to keep current.\nFormat: 1=1,2=0,3=2",
+          expCur
+        );
+        if(expS == null) return;
+        const expT = String(expS).trim();
+        if(expT){
+          for (const part of expT.split(/[,;\n]/)){
+            const m = String(part).trim().match(/^(\d+)\s*[=:]\s*(\d+)$/);
+            if(!m) continue;
+            const lvl = clampInt(m[1], 0, 99);
+            const tot = Number(slots[Number(lvl)]||0);
+            const exp = clampInt(m[2], 0, 99);
+            if(lvl>=1 && lvl<=9) c.spellSlots.expended[String(lvl)] = clampInt(exp, 0, tot);
+          }
+        }
+        await this._autosave(c, id, true);
+        renderSpellSlots();
+      });
+
+      const modeBtn = slotEl.querySelector("#btnSlotsMode");
+      if(modeBtn) modeBtn.addEventListener("click", async () => {
+        if(usingManual){
+          if(!confirm("Switch back to automatic slot calculation?")) return;
+          delete c.spellSlots.manual;
+          await this._autosave(c, id, true);
+          renderSpellSlots();
+          return;
+        }
+        const s = prompt("Enter manual slot totals\nFormat: 1=4,2=3,3=2", "1=2");
+        if(s==null) return;
+        const out = {};
+        for (const part of String(s).split(/[,;\n]/)){
+          const m = String(part).trim().match(/^(\d+)\s*[=:]\s*(\d+)$/);
+          if(!m) continue;
+          const lvl = clampInt(m[1], 0, 99);
+          const tot = clampInt(m[2], 0, 99);
+          if(lvl>=1 && lvl<=9 && tot>=0 && tot<=20) out[String(lvl)] = tot;
+        }
+        c.spellSlots.manual ||= {};
+        c.spellSlots.manual.slots = out;
+        await this._autosave(c, id, true);
+        renderSpellSlots();
+      });
     };
 
+
+
+    const renderInspiration = () => {
+      const inspEl = $("#inspirationBox");
+      if(!inspEl) return;
+      c.inspiration = !!c.inspiration;
+      inspEl.innerHTML = `
+        <div class="item">
+          <div>
+            <div class="item-title">Inspiration</div>
+            <div class="item-meta">One checkbox. One fragile shred of hope.</div>
+          </div>
+          <div class="row" style="justify-content:flex-end">
+            <label style="display:inline-flex;align-items:center;gap:8px">
+              <input id="inspirationToggle" type="checkbox" ${c.inspiration?"checked":""}/>
+              <span class="small muted">Have inspiration</span>
+            </label>
+          </div>
+        </div>
+      `;
+      const t = inspEl.querySelector("#inspirationToggle");
+      if(t) t.addEventListener("change", async () => {
+        c.inspiration = !!t.checked;
+        await this._autosave(c, id, true);
+      });
+    };
+
+    const inferRollText = (spell) => {
+      const meta = spell?.meta || spell?.details || {};
+      const sum = String(spell?.summary || "");
+      const full = (String(spell?.description || "") + " " + sum).toLowerCase();
+      // If the ruleset gives explicit roll/save info, use it.
+      if(meta.save) return `Save: ${meta.save}`;
+      if(meta.attack) return `Attack: ${meta.attack}`;
+
+      // Heuristics (because we live in a society that stores spells without mechanics)
+      const mSave = full.match(/(strength|dexterity|constitution|intelligence|wisdom|charisma)\s+saving\s+throw/);
+      if(mSave) return `Save: ${mSave[1][0].toUpperCase()+mSave[1].slice(1)} save`;
+      if(full.includes("spell attack") || full.includes("attack roll")) return "Spell attack roll";
+      return "Roll: (not specified in ruleset)";
+    };
+
+    const renderSpells = async () => {
+      const listEl = $("#spellList");
+      if(!listEl) return;
+
+      let ruleset = null;
+      if(c.rulesetId){
+        try{ ruleset = await this.db.getRuleset(c.rulesetId); }catch{}
+      }
+      const raw = ruleset?.raw || {};
+      const all = Array.isArray(raw.spells) ? raw.spells : [];
+      const byId = new Map(all.map(s => [s.id, s]));
+
+      c.spells ||= { cantrips: [], known: [] };
+      c.spells.cantrips = Array.isArray(c.spells.cantrips) ? c.spells.cantrips : [];
+      c.spells.known = Array.isArray(c.spells.known) ? c.spells.known : [];
+
+      const cantrips = [...new Set(c.spells.cantrips)].map(id => byId.get(id) || {id, name:id, level:0});
+      const known = [...new Set(c.spells.known)].map(id => byId.get(id) || {id, name:id, level:"?"});
+
+      const spellRow = (sp) => {
+        const meta = sp?.meta || sp?.details || {};
+        const lvl = sp?.level;
+        const roll = inferRollText(sp);
+        const header = `${sp?.name || sp?.id} ${lvl===0?"(Cantrip)":(Number.isFinite(Number(lvl))?`(Level ${lvl})`:"(Level ?)")}`;
+        return `
+          <div class="item">
+            <div style="flex:1">
+              <details>
+                <summary style="cursor:pointer">
+                  <span class="item-title">${esc(header)}</span>
+                  <div class="item-meta">${esc(roll)}</div>
+                </summary>
+                <div style="margin-top:8px" class="small">
+                  <div class="muted">School: ${esc(meta.school||"?")} • Casting: ${esc(meta.castingTime||"?")} • Range: ${esc(meta.range||"?")}</div>
+                  <div class="muted">Components: ${esc(meta.components||"?")} • Duration: ${esc(meta.duration||"?")}</div>
+                  ${sp?.summary ? `<div style="margin-top:8px">${esc(sp.summary)}</div>` : `<div style="margin-top:8px" class="muted">No summary in ruleset.</div>`}
+                </div>
+              </details>
+            </div>
+            <div class="row" style="justify-content:flex-end">
+              <button class="btn danger" data-spell-del="${attr(sp.id)}" type="button">Remove</button>
+            </div>
+          </div>
+        `;
+      };
+
+      listEl.innerHTML = `
+        ${cantrips.length ? `<div class="small muted" style="margin:8px 0">Cantrips</div>${cantrips.sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(spellRow).join("")}` : `<div class="muted">No cantrips tracked.</div>`}
+        <div class="hr"></div>
+        ${known.length ? `<div class="small muted" style="margin:8px 0">Spells</div>${known.sort((a,b)=>String(a.name).localeCompare(String(b.name))).map(spellRow).join("")}` : `<div class="muted">No spells tracked.</div>`}
+      `;
+
+      listEl.querySelectorAll("[data-spell-del]").forEach(b => b.addEventListener("click", async () => {
+        const sid = b.getAttribute("data-spell-del");
+        c.spells.cantrips = (c.spells.cantrips||[]).filter(x => x !== sid);
+        c.spells.known = (c.spells.known||[]).filter(x => x !== sid);
+        await this._autosave(c, id, true);
+        renderSpells();
+      }));
+    };
     const renderFeatures = () => {
       const list = c.features || [];
       $("#featureList").innerHTML = list.length ? list.map(f => `
@@ -573,7 +760,9 @@ export class UI{
     };
 
     renderInv();
+    renderInspiration();
     await renderSpellSlots();
+    await renderSpells();
     renderFeatures();
     renderSaves();
     renderSkills();
@@ -585,6 +774,7 @@ export class UI{
       renderSaves();
       renderSkills();
       renderSpellSlots();
+      renderSpells();
     });
 
     ["name","ac","speed","hpCurrent","hpMax","tempHp","notes"].forEach(hookAutosave);
@@ -706,6 +896,41 @@ $("#ruleset").addEventListener("change", async () => {
       c.features.push({ id: crypto.randomUUID(), name, level: c.level, text:"", tags:["manual"] });
       await this._autosave(c, id, true);
       renderFeatures();
+
+
+    // spell add
+    $("#btnAddSpell").addEventListener("click", async () => {
+      if(!c.rulesetId) return alert("Select a ruleset first.");
+      const rs = await this.db.getRuleset(c.rulesetId);
+      const raw = rs?.raw || {};
+      const all = Array.isArray(raw.spells) ? raw.spells : [];
+      if(!all.length) return alert("This ruleset has no spells.");
+
+      const q = prompt("Search spell name (optional)", "");
+      if(q==null) return;
+      const query = String(q).toLowerCase().trim();
+      const matches = all.filter(s => !query || String(s.name||"").toLowerCase().includes(query)).slice(0,30);
+      if(!matches.length) return alert("No matches.");
+
+      const menu = matches.map((s,i)=>`${i+1}. ${s.name} (L${s.level})`).join("
+");
+      const pick = prompt(`Pick a spell by number:
+
+${menu}`, "1");
+      if(pick==null) return;
+      const idx = Number(pick)-1;
+      if(!Number.isFinite(idx) || idx<0 || idx>=matches.length) return alert("Invalid pick.");
+      const sp = matches[idx];
+
+      c.spells ||= { cantrips: [], known: [] };
+      if(Number(sp.level) === 0){
+        if(!c.spells.cantrips.includes(sp.id)) c.spells.cantrips.push(sp.id);
+      }else{
+        if(!c.spells.known.includes(sp.id)) c.spells.known.push(sp.id);
+      }
+      await this._autosave(c, id, true);
+      renderSpells();
+    });
     });
 
     // level-up wizard
@@ -716,12 +941,15 @@ $("#ruleset").addEventListener("change", async () => {
       if(!c.classId) return alert("Select a class.");
       const targetLevel = clampInt($("#level").value, 1, 20);
       const currentLevel = clampInt(c.level, 1, 20);
+      const force = !!(this.app.querySelector("#forceLevelUp")?.checked);
 
-      // Build list of levels to process:
-      // - If target == current, still run "setup" for current level if not yet applied.
-      // - If target > current, run each next level, but skip any already applied.
+      // Build list of levels to process.
+      // - Normal mode: only process levels above current.
+      // - Force mode: allow rerunning a specific level (even below current).
       const levels = [];
-      if (targetLevel === currentLevel) {
+      if(force){
+        levels.push(targetLevel);
+      }else if (targetLevel === currentLevel) {
         levels.push(currentLevel);
       } else {
         for (let L = currentLevel + 1; L <= targetLevel; L++) levels.push(L);
@@ -731,8 +959,42 @@ $("#ruleset").addEventListener("change", async () => {
       c.advancement ||= {};
 
       for (const level of levels) {
-        // Skip if this level already has recorded advancement (prevents repeats)
-        if (c.advancement[String(level)] && Object.keys(c.advancement[String(level)]).length) continue;
+        // Skip if this level already has recorded advancement (prevents repeats), unless forced
+        if (!force && c.advancement[String(level)] && Object.keys(c.advancement[String(level)]).length) continue;
+
+        if (force && c.advancement[String(level)] && Object.keys(c.advancement[String(level)]).length) {
+          // Roll back prior auto-added stuff for this level so reruns can actually change choices.
+          const prev = c.advancement[String(level)] || {};
+
+          // Remove previous choice feature summaries + grant rows for this level.
+          c.features = (c.features || []).filter(f => {
+            if(Number(f.level) !== Number(level)) return true;
+            const tags = f.tags || [];
+            // Keep manual features
+            if(tags.includes("manual")) return true;
+            // Remove grant/choice rows
+            if(tags.includes("grant") || tags.includes("choice")) return false;
+            return true;
+          });
+
+          // Attempt to remove prior picks from spell/infusion stores
+          c.spells ||= { cantrips: [], known: [] };
+          c.infusions ||= { learned: [], active: {} };
+          for (const [choiceId, picks] of Object.entries(prev)) {
+            if(choiceId === "_applied") continue;
+            const arr = Array.isArray(picks) ? picks : [picks];
+            if(choiceId.includes("cantrip") || choiceId.includes("spell")) {
+              c.spells.cantrips = (c.spells.cantrips||[]).filter(x => !arr.includes(x));
+              c.spells.known = (c.spells.known||[]).filter(x => !arr.includes(x));
+            }
+            if(choiceId.includes("infusion")) {
+              c.infusions.learned = (c.infusions.learned||[]).filter(x => !arr.includes(x));
+            }
+          }
+
+          // Clear recorded advancement for this level to allow re-apply
+          delete c.advancement[String(level)];
+        }
 
         const node = this.engine.getProgression(rs, c.classId, level);
         if (!node) {
