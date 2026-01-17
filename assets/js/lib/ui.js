@@ -910,14 +910,54 @@ $("#ruleset").addEventListener("change", async () => {
 
     // feature add
     $("#btnAddFeature").addEventListener("click", async () => {
-      const name = prompt("Feature name?", "New Feature");
-      if(!name) return;
-      c.features.push({ id: crypto.randomUUID(), name, level: c.level, text:"", tags:["manual"] });
-      await this._autosave(c, id, true);
-      renderFeatures();
-    });
+      // Clean, reliable Add Feature (no duplicate 'text', no mystery 'character' var)
+      const cRef =
+        (this?.state?.character) ||
+        (window.UIInstance?.state?.character) ||
+        (window.UIInstance?.character) ||
+        (window.currentChar) ||
+        (window.state?.character) ||
+        c;
 
-    // spell add
+      if (!cRef) return alert("No character loaded.");
+
+      const nameRaw = prompt("Feature name?", "New Feature");
+      if (nameRaw == null) return;
+      const name = String(nameRaw).trim();
+      if (!name) return;
+
+      const textRaw = prompt("Feature description / notes? (optional)", "");
+      if (textRaw == null) return;
+      const text = String(textRaw).trim();
+
+      if (!Array.isArray(cRef.features)) cRef.features = [];
+
+      cRef.features.push({
+        name,
+        text,
+        level: Number(cRef.level || 1),
+        source: "manual"
+      });
+
+      // Save via the app's autosave if present, otherwise fall back to saveCharacter if available
+      try {
+        const id =
+          (new URLSearchParams(location.hash.split("?")[1] || "")).get("id") ||
+          (new URLSearchParams(location.search)).get("id") ||
+          cRef.id ||
+          null;
+
+        if (typeof this?._autosave === "function" && id) {
+          await this._autosave(cRef, id, true);
+        } else if (typeof window.saveCharacter === "function") {
+          await window.saveCharacter(cRef);
+        }
+      } catch (_) {}
+
+      try { if (typeof window.renderFeatures === "function") window.renderFeatures(); } catch (_) {}
+      try { if (typeof this?.render === "function") this.render(); } catch (_) {}
+      try { if (typeof window.UIInstance?.render === "function") window.UIInstance.render(); } catch (_) {}
+    });// spell add
     $("#btnAddSpell").addEventListener("click", async () => {
       if(!c.rulesetId) return alert("Select a ruleset first.");
       const rs = await this.db.getRuleset(c.rulesetId);
