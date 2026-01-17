@@ -432,8 +432,18 @@ export class UI{
       const usingManual = (manualSlots && typeof manualSlots === 'object');
       const tiers = Object.keys(slots).map(n=>Number(n)).filter(n=>Number.isFinite(n) && Number(slots[n])>0).sort((a,b)=>a-b);
       if(!tiers.length){
-        slotEl.innerHTML = ``;
-        return;
+        slotEl.innerHTML = `
+          <div class="item">
+            <div>
+              <div class="item-title">${esc(label)}</div>
+              <div class="item-meta">No slots detected. Use Edit to set manual totals.</div>
+            </div>
+            <div class="row" style="justify-content:flex-end;gap:8px">
+              <button class="btn" id="btnSlotsEdit" type="button">Edit</button>
+            </div>
+          </div>
+        `;
+        // continue so Edit handler can run
       }
 
       slotEl.innerHTML = `
