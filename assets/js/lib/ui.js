@@ -896,7 +896,7 @@ $("#ruleset").addEventListener("change", async () => {
       c.features.push({ id: crypto.randomUUID(), name, level: c.level, text:"", tags:["manual"] });
       await this._autosave(c, id, true);
       renderFeatures();
-
+    });
 
     // spell add
     $("#btnAddSpell").addEventListener("click", async () => {
@@ -929,7 +929,6 @@ ${menu}`, "1");
       }
       await this._autosave(c, id, true);
       renderSpells();
-    });
     });
 
     // level-up wizard
