@@ -69,7 +69,7 @@ export class DB {
 
 
       if (!db.objectStoreNames.contains(STORES.blobs)) {
-        db.createObjectStore(STORES.blobs, { keyPath: \"id\" });
+        db.createObjectStore(STORES.blobs, { keyPath: "id" });
       }
       // You can add indexes here later if you need them.
       // Keep upgrades simple or iOS Safari will punish you.
