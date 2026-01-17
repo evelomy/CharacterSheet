@@ -3,12 +3,13 @@
 // Data loss is allowed per your requirements.
 
 const DB_NAME = "charsheet_db";
-const DB_VER = 3; // bump to force onupgradeneeded
+const DB_VER = 4; // bump to add blobs store // bump to force onupgradeneeded
 
 const STORES = {
   meta: "meta",
   rulesets: "rulesets",
   characters: "characters",
+  blobs: "blobs",
 };
 
 function reqToPromise(req) {
@@ -66,6 +67,10 @@ export class DB {
         db.createObjectStore(STORES.characters, { keyPath: "id" });
       }
 
+
+      if (!db.objectStoreNames.contains(STORES.blobs)) {
+        db.createObjectStore(STORES.blobs, { keyPath: \"id\" });
+      }
       // You can add indexes here later if you need them.
       // Keep upgrades simple or iOS Safari will punish you.
     };
@@ -106,9 +111,8 @@ export class DB {
     if (!existing) {
       await this.putMeta("schema", { ver: DB_VER, createdAt: nowIso() });
     } else if (existing?.ver !== DB_VER) {
-      // This can happen if something went sideways in Safari.
-      // We choose violence (wipe) rather than crash loops.
-      throw new Error(`Schema mismatch meta.ver=${existing?.ver} DB_VER=${DB_VER}`);
+      // Upgrade in place (do NOT wipe characters)
+      await this.putMeta("schema", { ver: DB_VER, upgradedAt: nowIso() });
     }
   }
 
@@ -147,6 +151,26 @@ export class DB {
 
   async deleteRuleset(id) {
     return this._safeWrite(STORES.rulesets, (store) => store.delete(id));
+  }
+
+
+  // ---- Blobs (portrait/images)
+  async putBlob(blobOrFile) {
+    const blob = blobOrFile instanceof Blob ? blobOrFile : new Blob([blobOrFile]);
+    const id = (globalThis.crypto?.randomUUID?.() || String(Date.now()) + Math.random().toString(16).slice(2));
+    await this._safeWrite(STORES.blobs, (store) => store.put({ id, blob }));
+    return id;
+  }
+
+  async getBlob(id) {
+    const { tx, store } = this._tx(STORES.blobs, "readonly");
+    const rec = await reqToPromise(store.get(id));
+    await txDone(tx);
+    return rec?.blob ?? null;
+  }
+
+  async deleteBlob(id) {
+    return this._safeWrite(STORES.blobs, (store) => store.delete(id));
   }
 
   // ---- Characters
