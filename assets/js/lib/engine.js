@@ -311,4 +311,59 @@ export class Engine {
     out.updatedAt = new Date().toISOString();
     return out;
   }
+
+  // ---------------- Spell slots ----------------
+  // Minimal 5e slot tracking so the UI can show spell slots.
+  // This engine doesn't yet model multiclassing or pact magic.
+  // Returns: { slots: {1..9}, casterType, casterLevel }
+  getSpellSlots(c, ruleset){
+    const raw = ruleset?.raw || {};
+    const cls = this.getClass(ruleset, c.classId);
+
+    // Determine caster type.
+    // Preference order: explicit class.casterType, otherwise guess from features/spells.
+    let casterType = cls?.casterType || "";
+
+    if(!casterType){
+      // crude detection: if class has spellcasting-like features or the character has any spells tracked
+      const hasAnySpells = (c?.spells?.cantrips?.length || 0) > 0 || (c?.spells?.known?.length || 0) > 0;
+      if(hasAnySpells) casterType = "half"; // default guess (Artificer is half)
+    }
+
+    if(!casterType) return { slots: {}, casterType: "none", casterLevel: 0 };
+
+    const level = this.clampInt(c.level ?? 1, 1, 20);
+    const casterLevel = casterType === "full" ? level
+      : casterType === "half" ? Math.max(0, Math.floor(level/2))
+      : casterType === "third" ? Math.max(0, Math.floor(level/3))
+      : level;
+
+    const tableFull = {
+      1:{1:2},
+      2:{1:3},
+      3:{1:4,2:2},
+      4:{1:4,2:3},
+      5:{1:4,2:3,3:2},
+      6:{1:4,2:3,3:3},
+      7:{1:4,2:3,3:3,4:1},
+      8:{1:4,2:3,3:3,4:2},
+      9:{1:4,2:3,3:3,4:3,5:1},
+      10:{1:4,2:3,3:3,4:3,5:2},
+      11:{1:4,2:3,3:3,4:3,5:2,6:1},
+      12:{1:4,2:3,3:3,4:3,5:2,6:1},
+      13:{1:4,2:3,3:3,4:3,5:2,6:1,7:1},
+      14:{1:4,2:3,3:3,4:3,5:2,6:1,7:1},
+      15:{1:4,2:3,3:3,4:3,5:2,6:1,7:1,8:1},
+      16:{1:4,2:3,3:3,4:3,5:2,6:1,7:1,8:1},
+      17:{1:4,2:3,3:3,4:3,5:2,6:1,7:1,8:1,9:1},
+      18:{1:4,2:3,3:3,4:3,5:3,6:1,7:1,8:1,9:1},
+      19:{1:4,2:3,3:3,4:3,5:3,6:2,7:1,8:1,9:1},
+      20:{1:4,2:3,3:3,4:3,5:3,6:2,7:2,8:1,9:1},
+    };
+    // Half-caster (Artificer/Paladin/Ranger) uses caster level rounding down.
+    // casterLevel 1-10 maps to class levels 2-20.
+    const cl = Math.max(0, Math.min(20, casterLevel));
+    const slots = tableFull[cl] ? structuredClone(tableFull[cl]) : {};
+    return { slots, casterType, casterLevel: cl };
+  }
 }

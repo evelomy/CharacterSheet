@@ -322,6 +322,7 @@ export class UI{
             <h3>Features & Choices</h3>
             <button id="btnAddFeature" class="btn" type="button">Add</button>
           </div>
+          <div id="spellSlots" class="list" style="margin-top:10px"></div>
           <div id="featureList" class="list" style="margin-top:10px"></div>
 
           <div class="hr"></div>
@@ -404,6 +405,86 @@ export class UI{
     };
 
     // features render
+    const renderSpellSlots = async () => {
+      const slotEl = $("#spellSlots");
+      if(!slotEl) return;
+
+      let ruleset = null;
+      if(c.rulesetId){
+        try{ ruleset = await this.db.getRuleset(c.rulesetId); }catch{}
+      }
+
+      const info = this.engine.getSpellSlots(c, ruleset);
+      const slots = info?.slots || {};
+      const tiers = Object.keys(slots).map(n=>Number(n)).filter(n=>Number.isFinite(n) && slots[n]>0).sort((a,b)=>a-b);
+      if(!tiers.length){
+        slotEl.innerHTML = ``;
+        return;
+      }
+
+      // track expended in character.spellSlots.expended[level] = number
+      c.spellSlots ||= { expended: {} };
+      c.spellSlots.expended ||= {};
+
+      slotEl.innerHTML = `
+        <div class="item">
+          <div>
+            <div class="item-title">Spell Slots</div>
+            <div class="item-meta">${esc(info.casterType)} caster • caster level ${esc(String(info.casterLevel))}</div>
+            <div style="margin-top:8px; display:grid; gap:10px">
+              ${tiers.map(lvl => {
+                const total = Number(slots[lvl]||0);
+                const exp = clampInt(c.spellSlots.expended[String(lvl)] ?? 0, 0, total);
+                const boxes = Array.from({length: total}).map((_,i)=>{
+                  const checked = i < exp;
+                  return `<label style="display:inline-flex;align-items:center;margin-right:6px">
+                    <input type="checkbox" data-slot-lvl="${lvl}" data-slot-i="${i}" ${checked?"checked":""}/>
+                  </label>`;
+                }).join("");
+                return `
+                  <div>
+                    <div class="small muted" style="margin-bottom:4px">Level ${esc(String(lvl))} (${esc(String(total))})</div>
+                    <div>${boxes}</div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+          </div>
+          <div class="row" style="justify-content:flex-end">
+            <button class="btn" id="btnSlotsReset" type="button">Long rest reset</button>
+          </div>
+        </div>
+      `;
+
+      // handlers
+      slotEl.querySelectorAll("input[data-slot-lvl]").forEach(cb => cb.addEventListener("change", async () => {
+        const lvl = cb.getAttribute("data-slot-lvl");
+        const i = Number(cb.getAttribute("data-slot-i"));
+        const total = Number(slots[Number(lvl)]||0);
+        const exp = clampInt(c.spellSlots.expended[String(lvl)] ?? 0, 0, total);
+
+        // Make expended equal to highest checked index+1.
+        // If unchecked a box below expended, reduce expended to that index.
+        let newExp = exp;
+        if(cb.checked){
+          newExp = Math.max(exp, i+1);
+        }else{
+          newExp = Math.min(exp, i);
+        }
+        c.spellSlots.expended[String(lvl)] = clampInt(newExp, 0, total);
+        await this._autosave(c, id, true);
+        renderSpellSlots();
+      }));
+
+      const resetBtn = slotEl.querySelector("#btnSlotsReset");
+      if(resetBtn) resetBtn.addEventListener("click", async () => {
+        if(!confirm("Reset all spell slots (long rest)?")) return;
+        c.spellSlots.expended = {};
+        await this._autosave(c, id, true);
+        renderSpellSlots();
+      });
+    };
+
     const renderFeatures = () => {
       const list = c.features || [];
       $("#featureList").innerHTML = list.length ? list.map(f => `
@@ -492,6 +573,7 @@ export class UI{
     };
 
     renderInv();
+    await renderSpellSlots();
     renderFeatures();
     renderSaves();
     renderSkills();
@@ -502,6 +584,7 @@ export class UI{
       await this._autosave(c, id);
       renderSaves();
       renderSkills();
+      renderSpellSlots();
     });
 
     ["name","ac","speed","hpCurrent","hpMax","tempHp","notes"].forEach(hookAutosave);
