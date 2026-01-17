@@ -955,9 +955,10 @@ $("#ruleset").addEventListener("change", async () => {
       } catch (_) {}
 
       try { if (typeof window.renderFeatures === "function") window.renderFeatures(); } catch (_) {}
-      try { if (typeof this?.render === "function") this.render(); } catch (_) {}
-      try { if (typeof window.UIInstance?.render === "function") window.UIInstance.render(); } catch (_) {}
-    });// spell add
+
+      // Only re-render the Features list (full UI.render() is fragile here)
+      try { if (typeof window.renderFeatures === "function") window.renderFeatures(); } catch (_) {}
+});// spell add
     $("#btnAddSpell").addEventListener("click", async () => {
       if(!c.rulesetId) return alert("Select a ruleset first.");
       const rs = await this.db.getRuleset(c.rulesetId);
